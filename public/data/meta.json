@@ -1,0 +1,12 @@
+{
+  "lens": "lens_arena8b_m32_k4",
+  "embed_model_id": "Qwen/Qwen3-Embedding-0.6B",
+  "m_total": 32,
+  "k": 4,
+  "input_dim": 4096,
+  "n_battles": 390606,
+  "ev": 0.2556445286428771,
+  "n_verified": 17,
+  "loo_r2": 0.4264125366354762,
+  "n_models": 214
+}
