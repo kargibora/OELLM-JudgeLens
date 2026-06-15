@@ -11,7 +11,7 @@ import {
   ZAxis,
 } from "recharts";
 import type { ModelValidation } from "../types";
-import { Card, Metric } from "./ui";
+import { Card, Explain, Metric } from "./ui";
 import { fmt } from "../data";
 
 export default function Validation({ validation }: { validation: ModelValidation[] }) {
@@ -57,10 +57,17 @@ export default function Validation({ validation }: { validation: ModelValidation
       </div>
       <Card>
         <h2 className="text-lg font-semibold">Predicted deficit vs actual win rate</h2>
-        <p className="mb-3 text-sm text-slate-400">
-          Each point is a model. x = Σ net_direction · win_assoc over verified features (leave-one-
-          model-out); y = its real human win rate. A tight diagonal means the diagnosis is predictive.
-        </p>
+        <div className="mb-3">
+          <Explain>
+            Each dot is a model. The <b>predicted deficit score</b> (x) sums, over every verified
+            behaviour, how much more or less this model does it than the average model, weighted by
+            how much humans reward that behaviour — one number for “does it do the right things?”.
+            The y-axis is the model’s <b>real human win rate</b>. Dots on a rising line mean what the
+            lens says a model lacks predicts how often it actually loses. <b>R²</b> = the share of
+            win-rate differences this explains ({fmt(r2, 2)} ≈ {(r2 * 100).toFixed(0)}%); it’s{" "}
+            <b>leave-one-model-out</b>, so each model’s score never uses its own data.
+          </Explain>
+        </div>
         <ResponsiveContainer width="100%" height={460}>
           <ScatterChart margin={{ left: 8, right: 24, top: 8, bottom: 16 }}>
             <CartesianGrid stroke="#1f2937" />

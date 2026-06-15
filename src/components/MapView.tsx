@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MapData, MapPoint } from "../types";
-import { Card } from "./ui";
+import { Card, Explain } from "./ui";
 
 // distinct categorical palette (features / behaviors map by index)
 const PALETTE = [
@@ -169,6 +169,13 @@ export default function MapView({ map }: { map: MapData | null }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <Explain>
+        Each dot is one battle (a prompt with two responses). They’re placed by UMAP so battles with
+        similar chosen-vs-rejected differences sit close together — tight clusters share a behaviour.
+        <b> Colour</b> = the dominant behaviour. <b>Bigger/brighter</b> dots express it more strongly;
+        faint dots are weak/noise (drag <i>min activation</i> to hide them). <b>Click a dot</b> to read
+        its prompt and both responses — a quick way to check the map makes sense.
+      </Explain>
       <Card>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold">Battle map (UMAP of SAE difference codes)</h2>

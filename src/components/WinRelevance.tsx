@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { Feature } from "../types";
-import { Card } from "./ui";
+import { Card, Explain } from "./ui";
 
 export default function WinRelevance({ features }: { features: Feature[] }) {
   const data = useMemo(
@@ -30,10 +30,16 @@ export default function WinRelevance({ features }: { features: Feature[] }) {
   return (
     <Card>
       <h2 className="text-lg font-semibold">Which behaviours do humans reward?</h2>
-      <p className="mb-3 text-sm text-slate-400">
-        Per-feature win association: how much "A expresses this concept more" coincides with humans
-        preferring A. Faded bars are not statistically significant.
-      </p>
+      <div className="mb-3">
+        <Explain>
+          Each bar is one behaviour. Its length is the <b>win association</b>: among battles where
+          the behaviour appears, how much more often the response showing it is the one humans
+          prefer. <span className="text-good">Right / green = rewarded</span>,{" "}
+          <span className="text-bad">left / red = penalised</span>. Faded bars aren’t statistically
+          significant. (e.g. “gives a direct answer” at +0.22 wins ≈22 points more often; “refuses
+          on safety” at −0.11 loses.)
+        </Explain>
+      </div>
       <ResponsiveContainer width="100%" height={Math.max(360, data.length * 30)}>
         <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24, top: 8, bottom: 8 }}>
           <XAxis type="number" stroke="#64748b" fontSize={12} />

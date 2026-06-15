@@ -1,5 +1,5 @@
 import type { Bundle } from "../types";
-import { Card, Metric } from "./ui";
+import { Card, Explain, Metric } from "./ui";
 import { fmt } from "../data";
 
 export default function Overview({ bundle }: { bundle: Bundle }) {
@@ -23,6 +23,15 @@ export default function Overview({ bundle }: { bundle: Bundle }) {
         <Metric label="Battles" value={(m.n_battles ?? 0).toLocaleString()} />
         <Metric label="M / K" value={`${m.m_total} / ${m.k}`} sub={`dim ${m.input_dim}`} />
       </div>
+
+      <Explain>
+        <b>What this is.</b> We embed each response, take the difference between the two answers
+        in a battle (chosen − rejected), and learn a small set of interpretable “axes of
+        difference” with a sparse autoencoder. <b>Explained var</b> = how much of those differences
+        the axes capture. <b>Verified features</b> = axes an independent LLM confirmed are real.
+        <b> LOO R²</b> = how well those axes predict each model’s real win rate, with every model
+        held out of its own prediction — higher means the diagnosis genuinely generalises.
+      </Explain>
 
       <Card>
         <h2 className="mb-2 text-lg font-semibold">What this lens found</h2>

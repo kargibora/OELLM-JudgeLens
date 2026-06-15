@@ -1,4 +1,15 @@
 import React from "react";
+import { Info } from "lucide-react";
+
+// plain-language "how to read this" callout
+export function Explain({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2 rounded-xl border border-accent/30 bg-accent/5 p-3 text-sm leading-relaxed text-slate-300">
+      <Info size={16} className="mt-0.5 shrink-0 text-accent" />
+      <div>{children}</div>
+    </div>
+  );
+}
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (

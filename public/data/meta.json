@@ -1,6 +1,6 @@
 {
   "lens": "lens_arena8b_m32_k4",
-  "embed_model_id": "Qwen/Qwen3-Embedding-0.6B",
+  "embed_model_id": "Qwen/Qwen3-Embedding-8B",
   "m_total": 32,
   "k": 4,
   "input_dim": 4096,

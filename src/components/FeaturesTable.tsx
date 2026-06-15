@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Feature } from "../types";
-import { Badge, Card } from "./ui";
+import { Badge, Card, Explain } from "./ui";
 import { fmt } from "../data";
 
 type SortKey = "feature_id" | "correlation" | "win_assoc";
@@ -33,6 +33,14 @@ export default function FeaturesTable({ features }: { features: Feature[] }) {
           <option value="correlation">sort by |fidelity|</option>
           <option value="feature_id">sort by id</option>
         </select>
+      </div>
+      <div className="mb-3">
+        <Explain>
+          Each row is one axis of difference the SAE found. <b>Concept</b> is its LLM-given name,{" "}
+          <b>behavior</b> its higher-level cluster. <b>Fidelity</b> is how strongly an independent LLM
+          agrees the concept is really present ("verified" if it passes the check). <b>Win assoc</b> is
+          how much humans reward it.
+        </Explain>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
