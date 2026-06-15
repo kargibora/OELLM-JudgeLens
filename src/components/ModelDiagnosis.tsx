@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { Diagnosis, Feature } from "../types";
-import { Card, Metric } from "./ui";
+import { Card, Explain, Metric } from "./ui";
 import { fmt } from "../data";
 
 export default function ModelDiagnosis({
@@ -71,6 +71,13 @@ export default function ModelDiagnosis({
 
   return (
     <div className="flex flex-col gap-4">
+      <Explain>
+        Pick a model. Each dot is a verified behaviour. <b>Left/right</b> = the model does it{" "}
+        <i>less / more</i> than the average model in the pool (delta vs pool). <b>Down/up</b> = humans{" "}
+        <i>penalise / reward</i> it. So the <span className="text-bad">top-left</span> corner is the
+        danger zone — behaviours the model under-does that humans reward (its <b>gaps</b>); the ranked
+        list below is exactly those.
+      </Explain>
       <div className="flex flex-wrap items-end gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-xs uppercase tracking-wider text-slate-400">search</span>
