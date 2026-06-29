@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Activity, BarChart3, FlaskConical, LayoutDashboard, Map, ScatterChart, Table2 } from "lucide-react";
+import {
+  Activity, AlertTriangle, ArrowRightLeft, BarChart3, ClipboardList, FlaskConical, Grid3x3,
+  LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Table2,
+} from "lucide-react";
 import type { Bundle } from "./types";
 import { loadBundle } from "./data";
 import Overview from "./components/Overview";
@@ -9,14 +12,30 @@ import Validation from "./components/Validation";
 import ModelDiagnosis from "./components/ModelDiagnosis";
 import FeatureDetail from "./components/FeatureDetail";
 import MapView from "./components/MapView";
+import ResponseMapView from "./components/ResponseMapView";
+import PromptMapView from "./components/PromptMapView";
+import DeltaHeatmap from "./components/DeltaHeatmap";
+import Elicitation from "./components/Elicitation";
+import ConditionalWinRelevance from "./components/ConditionalWinRelevance";
+import BiasScreen from "./components/BiasScreen";
+import PromptFeatures from "./components/PromptFeatures";
+import ReportCard from "./components/ReportCard";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "features", label: "Features", icon: Table2 },
   { id: "reward", label: "Win relevance", icon: BarChart3 },
+  { id: "conditional", label: "Conditional δ", icon: Split },
+  { id: "elicitation", label: "Prompt → Response", icon: ArrowRightLeft },
+  { id: "relationship", label: "Relationship Δ", icon: Grid3x3 },
+  { id: "confound", label: "Confound screen", icon: AlertTriangle },
+  { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
   { id: "validation", label: "Validation", icon: ScatterChart },
   { id: "diagnosis", label: "Model diagnosis", icon: Activity },
+  { id: "report", label: "Report card", icon: ClipboardList },
   { id: "map", label: "Map", icon: Map },
+  { id: "responsemap", label: "Feature map", icon: ScatterChart },
+  { id: "promptmap", label: "Prompt map", icon: MessageSquare },
   { id: "detail", label: "Feature detail", icon: FlaskConical },
 ] as const;
 
@@ -24,6 +43,8 @@ export default function App() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<string>("overview");
+  // cross-tab link: ★ in the prompt-map panel jumps to its Δ cell in the heatmap
+  const [focusCell, setFocusCell] = useState<{ pc: number; cf: number } | null>(null);
 
   useEffect(() => {
     loadBundle().then(setBundle).catch((e) => setErr(String(e)));
@@ -72,9 +93,22 @@ export default function App() {
       {tab === "overview" && <Overview bundle={bundle} />}
       {tab === "features" && <FeaturesTable features={bundle.features} />}
       {tab === "reward" && <WinRelevance features={bundle.features} />}
+      {tab === "conditional" && <ConditionalWinRelevance data={bundle.conditional} />}
+      {tab === "elicitation" && <Elicitation data={bundle.elicitation} />}
+      {tab === "relationship" && <DeltaHeatmap delta={bundle.delta} focus={focusCell} />}
+      {tab === "confound" && <BiasScreen bias={bundle.bias} />}
+      {tab === "prompts" && <PromptFeatures data={bundle.promptFeatures} />}
       {tab === "validation" && <Validation validation={bundle.validation} />}
       {tab === "diagnosis" && <ModelDiagnosis diagnosis={bundle.diagnosis} features={bundle.features} />}
+      {tab === "report" && <ReportCard diagnosis={bundle.diagnosis} features={bundle.features} />}
       {tab === "map" && <MapView map={bundle.map} />}
+      {tab === "responsemap" && <ResponseMapView map={bundle.responseMap} />}
+      {tab === "promptmap" && (
+        <PromptMapView
+          map={bundle.promptMap}
+          onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("relationship"); }}
+        />
+      )}
       {tab === "detail" && <FeatureDetail features={bundle.features} examples={bundle.examples} />}
     </div>
   );
