@@ -259,12 +259,9 @@ export interface Bundle {
   validation: ModelValidation[];
   diagnosis: Diagnosis | null;
   examples: Examples | null;
-  map: MapData | null;
   delta: DeltaData | null;
   bias: BiasRow[] | null;
   promptFeatures: PromptFeatures | null;
-  promptMap: PromptMapData | null;
-  responseMap: ResponseMapData | null;
   conditional: ConditionalData | null;
   elicitation: ElicitationData | null;
   reportBattles: ReportBattles | null;
