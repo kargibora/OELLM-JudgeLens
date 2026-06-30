@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowRightLeft, BarChart3, ClipboardList, FlaskConical, Grid3x3,
+  AlertTriangle, ArrowRightLeft, BarChart3, ClipboardList, FlaskConical,
   LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Table2,
 } from "lucide-react";
 import type { Bundle } from "./types";
@@ -11,7 +11,6 @@ import WinRelevance from "./components/WinRelevance";
 import Validation from "./components/Validation";
 import FeatureDetail from "./components/FeatureDetail";
 import MapsTab from "./components/MapsTab";
-import DeltaHeatmap from "./components/DeltaHeatmap";
 import Elicitation from "./components/Elicitation";
 import ConditionalWinRelevance from "./components/ConditionalWinRelevance";
 import BiasScreen from "./components/BiasScreen";
@@ -26,7 +25,6 @@ const TABS = [
   { id: "reward", label: "Win relevance", icon: BarChart3 },
   { id: "elicitation", label: "Elicits", icon: ArrowRightLeft, groupStart: "Prompt ↔ Response" },
   { id: "conditional", label: "Wins within prompt type", icon: Split },
-  { id: "relationship", label: "Winner contrast", icon: Grid3x3 },
   { id: "confound", label: "Confound screen", icon: AlertTriangle, groupStart: " " },
   { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
   { id: "validation", label: "Validation", icon: ScatterChart },
@@ -99,9 +97,15 @@ export default function App() {
       {tab === "overview" && <Overview bundle={bundle} />}
       {tab === "features" && <FeaturesTable features={bundle.features} />}
       {tab === "reward" && <WinRelevance features={bundle.features} />}
-      {tab === "conditional" && <ConditionalWinRelevance data={bundle.conditional} />}
+      {tab === "conditional" && (
+        <ConditionalWinRelevance
+          conditional={bundle.conditional}
+          delta={bundle.delta}
+          features={bundle.features}
+          focus={focusCell}
+        />
+      )}
       {tab === "elicitation" && <Elicitation data={bundle.elicitation} />}
-      {tab === "relationship" && <DeltaHeatmap delta={bundle.delta} focus={focusCell} />}
       {tab === "confound" && <BiasScreen bias={bundle.bias} />}
       {tab === "prompts" && <PromptFeatures data={bundle.promptFeatures} />}
       {tab === "validation" && <Validation validation={bundle.validation} />}
@@ -113,7 +117,7 @@ export default function App() {
         />
       )}
       {tab === "maps" && (
-        <MapsTab onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("relationship"); }} />
+        <MapsTab onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("conditional"); }} />
       )}
       {tab === "detail" && <FeatureDetail features={bundle.features} examples={bundle.examples} />}
     </div>

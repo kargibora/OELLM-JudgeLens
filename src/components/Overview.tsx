@@ -1,17 +1,31 @@
-import type { Bundle } from "../types";
-import { Card, Explain, Metric } from "./ui";
+import type { Bundle, Feature } from "../types";
+import { Card, Caveat, Explain, Metric, VerifiedBadge } from "./ui";
 import { fmt } from "../data";
+
+// length-controlled Δwin-rate is the honest effect; fall back to the raw gap only
+// when the logistic AME wasn't exported.
+const eff = (f: Feature) => f.delta_win_rate ?? f.win_assoc ?? 0;
+const sig = (f: Feature) => f.delta_win_significant ?? f.win_significant ?? false;
 
 export default function Overview({ bundle }: { bundle: Bundle }) {
   const m = bundle.meta;
-  const rewarded = [...bundle.features]
-    .filter((f) => f.win_significant && (f.win_assoc ?? 0) > 0)
-    .sort((a, b) => (b.win_assoc ?? 0) - (a.win_assoc ?? 0))
-    .slice(0, 3);
-  const penalized = [...bundle.features]
-    .filter((f) => f.win_significant && (f.win_assoc ?? 0) < 0)
-    .sort((a, b) => (a.win_assoc ?? 0) - (b.win_assoc ?? 0))
-    .slice(0, 3);
+  // honest landing: VERIFIED (held-out fidelity) AND significant, ranked by the
+  // length-controlled effect — not the raw, un-verified win gap.
+  const trustworthy = bundle.features.filter((f) => f.fidelity_pass && sig(f));
+  const pool = trustworthy.length ? trustworthy : bundle.features.filter(sig);
+  const verifiedBasis = trustworthy.length > 0;
+  const rewarded = [...pool].filter((f) => eff(f) > 0).sort((a, b) => eff(b) - eff(a)).slice(0, 3);
+  const penalized = [...pool].filter((f) => eff(f) < 0).sort((a, b) => eff(a) - eff(b)).slice(0, 3);
+
+  const Row = ({ f, tone }: { f: Feature; tone: "good" | "bad" }) => (
+    <li className="flex items-baseline justify-between gap-2">
+      <span className="min-w-0 truncate text-slate-300">
+        <span className={`text-${tone} font-mono`}>{eff(f) >= 0 ? "+" : ""}{fmt(eff(f), 2)}</span>
+        {" · "}{f.concept}
+      </span>
+      <VerifiedBadge pass={f.fidelity_pass} n={f.fidelity_n} />
+    </li>
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,25 +60,27 @@ export default function Overview({ bundle }: { bundle: Bundle }) {
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <div>
             <h3 className="text-sm font-semibold text-good">Humans reward</h3>
-            <ul className="mt-1 space-y-1 text-sm text-slate-300">
-              {rewarded.map((f) => (
-                <li key={f.feature_id}>
-                  <span className="text-good">+{fmt(f.win_assoc, 2)}</span> · {f.concept}
-                </li>
-              ))}
+            <ul className="mt-1 space-y-1 text-sm">
+              {rewarded.length === 0 && <li className="text-slate-500">—</li>}
+              {rewarded.map((f) => <Row key={f.feature_id} f={f} tone="good" />)}
             </ul>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-bad">Humans penalise</h3>
-            <ul className="mt-1 space-y-1 text-sm text-slate-300">
-              {penalized.map((f) => (
-                <li key={f.feature_id}>
-                  <span className="text-bad">{fmt(f.win_assoc, 2)}</span> · {f.concept}
-                </li>
-              ))}
+            <ul className="mt-1 space-y-1 text-sm">
+              {penalized.length === 0 && <li className="text-slate-500">—</li>}
+              {penalized.map((f) => <Row key={f.feature_id} f={f} tone="bad" />)}
             </ul>
           </div>
         </div>
+        <Caveat>
+          Values are the <b>length-controlled</b> Δwin-rate (WIMHF App. A.2), not the raw gap.
+          Concepts are <b>LLM-assigned labels</b>; ✓ marks ones an independent LLM confirmed on
+          held-out pairs. {verifiedBasis
+            ? "Showing verified, significant axes only."
+            : "No verified axes yet — showing significant-but-unverified axes; treat the labels as provisional."}{" "}
+          Association, not causation.
+        </Caveat>
       </Card>
     </div>
   );

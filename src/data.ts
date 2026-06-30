@@ -1,5 +1,19 @@
 import { useEffect, useState } from "react";
-import type { Bundle, MapData, PromptMapData, ResponseMapData } from "./types";
+import type {
+  Bundle, ConditionalBundle, ConditionalData, DeltaBundle, DeltaData,
+  MapData, PromptMapData, ResponseMapData,
+} from "./types";
+
+// conditional.json / delta.json are now `{raw, clustered}` wrappers. Older bundles wrote
+// the flat object directly — normalize those to `{raw: flat, clustered: null}` so the
+// viewer handles both without a re-export.
+function wrapKeyspace<T>(d: unknown): { raw: T | null; clustered: T | null } | null {
+  if (d == null || typeof d !== "object") return null; // guard: `in` throws on primitives
+  const o = d as Record<string, unknown>;
+  if ("raw" in o || "clustered" in o)
+    return { raw: (o.raw as T) ?? null, clustered: (o.clustered as T) ?? null };
+  return { raw: d as T, clustered: null }; // legacy flat shape
+}
 
 // resolve data files relative to the deploy base (works at "/" and under
 // GitHub Pages "/<repo>/"); BASE_URL is "./" given vite base: "./"
@@ -35,10 +49,10 @@ export async function loadBundle(): Promise<Bundle> {
       getJSON<Bundle["validation"]>("validation.json"),
       getJSON<Bundle["diagnosis"]>("diagnosis.json", true),
       getJSON<Bundle["examples"]>("examples.json", true),
-      getJSON<Bundle["delta"]>("delta.json", true),
+      getJSON<unknown>("delta.json", true),
       getJSON<Bundle["bias"]>("bias_screen.json", true),
       getJSON<Bundle["promptFeatures"]>("prompt_features.json", true),
-      getJSON<Bundle["conditional"]>("conditional.json", true),
+      getJSON<unknown>("conditional.json", true),
       getJSON<Bundle["elicitation"]>("elicitation.json", true),
       getJSON<Bundle["reportBattles"]>("report_battles.json", true),
     ]);
@@ -48,10 +62,10 @@ export async function loadBundle(): Promise<Bundle> {
     validation: validation ?? [],
     diagnosis: diagnosis ?? null,
     examples: examples ?? null,
-    delta: delta ?? null,
+    delta: wrapKeyspace<DeltaData>(delta) as DeltaBundle | null,
     bias: bias ?? null,
     promptFeatures: promptFeatures ?? null,
-    conditional: conditional ?? null,
+    conditional: wrapKeyspace<ConditionalData>(conditional) as ConditionalBundle | null,
     elicitation: elicitation ?? null,
     reportBattles: reportBattles ?? null,
   };

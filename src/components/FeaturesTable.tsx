@@ -3,7 +3,7 @@ import type { Feature } from "../types";
 import { Badge, Card, Explain } from "./ui";
 import { fmt } from "../data";
 
-type SortKey = "feature_id" | "correlation" | "win_assoc";
+type SortKey = "feature_id" | "correlation" | "win_assoc" | "generality";
 
 export default function FeaturesTable({ features }: { features: Feature[] }) {
   const [sort, setSort] = useState<SortKey>("win_assoc");
@@ -31,6 +31,7 @@ export default function FeaturesTable({ features }: { features: Feature[] }) {
         >
           <option value="win_assoc">sort by |win&nbsp;assoc|</option>
           <option value="correlation">sort by |fidelity|</option>
+          <option value="generality">sort by generality</option>
           <option value="feature_id">sort by id</option>
         </select>
       </div>
@@ -39,7 +40,9 @@ export default function FeaturesTable({ features }: { features: Feature[] }) {
           Each row is one axis of difference the SAE found. <b>Concept</b> is its LLM-given name,{" "}
           <b>behavior</b> its higher-level cluster. <b>Fidelity</b> is how strongly an independent LLM
           agrees the concept is really present ("verified" if it passes the check). <b>Win assoc</b> is
-          how much humans reward it.
+          how much humans reward it. <b>Generality</b> (0–1) is how broadly it fires across prompt
+          concepts — high = a general behaviour ("creates markdown"), low = content-bound ("crypto
+          advice", tied to one topic).
         </Explain>
       </div>
       <div className="overflow-x-auto">
@@ -51,6 +54,7 @@ export default function FeaturesTable({ features }: { features: Feature[] }) {
               <th className="py-2 pr-3">behavior</th>
               <th className="py-2 pr-3">fidelity</th>
               <th className="py-2 pr-3">win&nbsp;assoc</th>
+              <th className="py-2 pr-3">generality</th>
               <th className="py-2 pr-3">status</th>
             </tr>
           </thead>
@@ -66,6 +70,10 @@ export default function FeaturesTable({ features }: { features: Feature[] }) {
                     {(f.win_assoc ?? 0) >= 0 ? "+" : ""}
                     {fmt(f.win_assoc, 3)}
                   </span>
+                </td>
+                <td className="py-2 pr-3 font-mono text-slate-400"
+                    title={f.n_prompt_types != null ? `${f.n_prompt_types} prompt types` : undefined}>
+                  {f.generality != null ? fmt(f.generality, 2) : "—"}
                 </td>
                 <td className="py-2 pr-3">
                   <Badge ok={!!f.fidelity_pass}>{f.fidelity_pass ? "verified" : "unverified"}</Badge>
