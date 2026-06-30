@@ -54,6 +54,8 @@ export interface DiagnosisRow {
   // report-card extras (added by export_viewer_data.py; absent in older bundles)
   fire_rate?: number[]; // per-feature activation rate for this model, parallel to features
   prompt_types?: { concept: string; win_rate: number; n: number }[];
+  // per-model prompt-concept -> response-concept -> within-prompt Δwin edges
+  relations?: { prompt_concept: string; response_concept: string; delta_win: number; n: number }[];
 }
 
 export interface Diagnosis {
@@ -63,6 +65,9 @@ export interface Diagnosis {
   rows: Record<string, DiagnosisRow>;
   clusters?: number[]; // cluster_id parallel to `features`
   behaviors?: Record<string, string>;
+  // honest stub written when no oriented bank exists (export couldn't build a diagnosis)
+  error?: string;
+  message?: string;
 }
 
 export interface Example {

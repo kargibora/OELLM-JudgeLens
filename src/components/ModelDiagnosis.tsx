@@ -20,7 +20,8 @@ export default function ModelDiagnosis({
   diagnosis: Diagnosis | null;
   features: Feature[];
 }) {
-  if (!diagnosis) return <Card>No bank diagnosis exported (run export with a built bank).</Card>;
+  if (!diagnosis || diagnosis.error || diagnosis.models.length === 0)
+    return <Card>No bank diagnosis exported — build a bank and re-run export_viewer_data.py.</Card>;
 
   const winAssoc = useMemo(() => {
     const m: Record<number, number> = {};
