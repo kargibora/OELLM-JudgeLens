@@ -1,12 +1,12 @@
 {
-  "lens": "lens_arena8b_m32_k4",
-  "embed_model_id": "Qwen/Qwen3-Embedding-8B",
-  "m_total": 32,
-  "k": 4,
+  "lens": "indiv_m2048_k64",
+  "embed_model_id": "Qwen/Qwen3-Embedding-0.6B",
+  "m_total": 2048,
+  "k": 64,
   "input_dim": 4096,
-  "n_battles": 390606,
-  "ev": 0.2556445286428771,
-  "n_verified": 17,
-  "loo_r2": 0.4264125366354762,
-  "n_models": 214
+  "n_battles": 241509,
+  "ev": 0.8499709329313442,
+  "n_verified": 45,
+  "loo_r2": null,
+  "n_models": null
 }

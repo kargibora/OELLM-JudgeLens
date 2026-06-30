@@ -143,8 +143,8 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
         <br />
         <span className="text-slate-400">
           <b>Which view do I want?</b> This (<i>Elicits</i>) = what a prompt pulls out, regardless of
-          who wins. <i>Wins within prompt type</i> = whether a behaviour helps win, per prompt type.
-          <i> Winner contrast</i> = which trait separates the winner from the loser.
+          who wins. <i>Wins within prompt type</i> = whether a behaviour helps win, per prompt type
+          (with a raw winner-vs-loser contrast toggle inside).
         </span>
       </Explain>
 

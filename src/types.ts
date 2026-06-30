@@ -36,6 +36,10 @@ export interface Feature {
   delta_win_significant?: boolean;
   cluster_id?: number;
   behavior?: string;
+  // prompt-generality: how broadly this response feature fires across prompt concepts
+  // (0 = content-bound, 1 = fires across all). From the elicitation co-occurrence counts.
+  generality?: number;
+  n_prompt_types?: number; // # prompt concepts that significantly elicit it
 }
 
 export interface ModelValidation {
@@ -221,6 +225,18 @@ export interface ConditionalData {
   n_significant: number;
 }
 
+// conditional.json / delta.json each wrap two keyspaces: RAW (individual prompt
+// concepts, default) and CLUSTERED (prompt clusters — the "group into clusters" toggle).
+// `clustered` is null when the bundle was exported without the clustered CSV.
+export interface ConditionalBundle {
+  raw: ConditionalData | null;
+  clustered: ConditionalData | null;
+}
+export interface DeltaBundle {
+  raw: DeltaData | null;
+  clustered: DeltaData | null;
+}
+
 // --- prompt → response elicitation (co-activation lift, preference-independent) ---
 export interface ElicEdge {
   px: number; // prompt feature id
@@ -259,10 +275,10 @@ export interface Bundle {
   validation: ModelValidation[];
   diagnosis: Diagnosis | null;
   examples: Examples | null;
-  delta: DeltaData | null;
+  delta: DeltaBundle | null;
   bias: BiasRow[] | null;
   promptFeatures: PromptFeatures | null;
-  conditional: ConditionalData | null;
+  conditional: ConditionalBundle | null;
   elicitation: ElicitationData | null;
   reportBattles: ReportBattles | null;
 }

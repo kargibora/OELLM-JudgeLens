@@ -1,9 +1,9 @@
 {
-  "name": "judgelens-viewer",
+  "name": "prefscope-viewer",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Modern interactive viewer for JudgeLens difference-SAE lenses, fidelity, win-relevance and per-model diagnosis.",
+  "description": "Modern interactive viewer for PrefScope difference-SAE lenses, fidelity, win-relevance and per-model diagnosis.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
