@@ -1,4 +1,5 @@
-import type { Bundle } from "./types";
+import { useEffect, useState } from "react";
+import type { Bundle, MapData, PromptMapData, ResponseMapData } from "./types";
 
 // resolve data files relative to the deploy base (works at "/" and under
 // GitHub Pages "/<repo>/"); BASE_URL is "./" given vite base: "./"
@@ -24,19 +25,19 @@ async function getJSON<T>(name: string, optional = false): Promise<T | null> {
 }
 
 export async function loadBundle(): Promise<Bundle> {
-  const [meta, features, validation, diagnosis, examples, map, delta, bias, promptFeatures, promptMap, responseMap, conditional, elicitation, reportBattles] =
+  // NOTE: the three UMAP maps (map/prompt_map/response_map, ~tens of MB) are NOT loaded
+  // here — they're fetched lazily by useMap() when the Maps tab opens, so startup isn't
+  // blocked on the heaviest JSON parses in the app.
+  const [meta, features, validation, diagnosis, examples, delta, bias, promptFeatures, conditional, elicitation, reportBattles] =
     await Promise.all([
       getJSON<Bundle["meta"]>("meta.json"),
       getJSON<Bundle["features"]>("features.json"),
       getJSON<Bundle["validation"]>("validation.json"),
       getJSON<Bundle["diagnosis"]>("diagnosis.json", true),
       getJSON<Bundle["examples"]>("examples.json", true),
-      getJSON<Bundle["map"]>("map.json", true),
       getJSON<Bundle["delta"]>("delta.json", true),
       getJSON<Bundle["bias"]>("bias_screen.json", true),
       getJSON<Bundle["promptFeatures"]>("prompt_features.json", true),
-      getJSON<Bundle["promptMap"]>("prompt_map.json", true),
-      getJSON<Bundle["responseMap"]>("response_map.json", true),
       getJSON<Bundle["conditional"]>("conditional.json", true),
       getJSON<Bundle["elicitation"]>("elicitation.json", true),
       getJSON<Bundle["reportBattles"]>("report_battles.json", true),
@@ -47,16 +48,60 @@ export async function loadBundle(): Promise<Bundle> {
     validation: validation ?? [],
     diagnosis: diagnosis ?? null,
     examples: examples ?? null,
-    map: map ?? null,
     delta: delta ?? null,
     bias: bias ?? null,
     promptFeatures: promptFeatures ?? null,
-    promptMap: promptMap ?? null,
-    responseMap: responseMap ?? null,
     conditional: conditional ?? null,
     elicitation: elicitation ?? null,
     reportBattles: reportBattles ?? null,
   };
+}
+
+// --- lazy map loading -------------------------------------------------------
+// The maps are large and exploratory; fetch + parse each one only when its sub-tab
+// is first opened, and cache the parsed result (re-visits are instant, no re-parse).
+const mapCache = new Map<string, unknown>();
+const mapInflight = new Map<string, Promise<unknown>>();
+
+async function loadMap<T>(name: string): Promise<T | null> {
+  if (mapCache.has(name)) return mapCache.get(name) as T | null;
+  if (!mapInflight.has(name)) {
+    mapInflight.set(
+      name,
+      getJSON<T>(name, true)
+        .then((d) => {
+          mapCache.set(name, d); // cache null (absent) too, so we don't refetch
+          mapInflight.delete(name);
+          return d;
+        })
+        .catch(() => {
+          // hard fetch failure (e.g. offline): clear the inflight entry so a later
+          // visit can retry, and don't poison the cache
+          mapInflight.delete(name);
+          return null;
+        })
+    );
+  }
+  return mapInflight.get(name) as Promise<T | null>;
+}
+
+// undefined = still loading, null = file absent, T = loaded
+export function useMap<T = MapData | PromptMapData | ResponseMapData>(
+  name: string
+): T | null | undefined {
+  const [data, setData] = useState<T | null | undefined>(() =>
+    mapCache.has(name) ? (mapCache.get(name) as T | null) : undefined
+  );
+  useEffect(() => {
+    let live = true;
+    loadMap<T>(name).then((d) => {
+      if (live) setData(d);
+    });
+    return () => {
+      live = false;
+    };
+  }, [name]);
+  return data;
 }
 
 export const fmt = (x: number | null | undefined, d = 3) =>

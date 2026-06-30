@@ -10,9 +10,7 @@ import FeaturesTable from "./components/FeaturesTable";
 import WinRelevance from "./components/WinRelevance";
 import Validation from "./components/Validation";
 import FeatureDetail from "./components/FeatureDetail";
-import MapView from "./components/MapView";
-import ResponseMapView from "./components/ResponseMapView";
-import PromptMapView from "./components/PromptMapView";
+import MapsTab from "./components/MapsTab";
 import DeltaHeatmap from "./components/DeltaHeatmap";
 import Elicitation from "./components/Elicitation";
 import ConditionalWinRelevance from "./components/ConditionalWinRelevance";
@@ -33,9 +31,7 @@ const TABS = [
   { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
   { id: "validation", label: "Validation", icon: ScatterChart },
   { id: "report", label: "Model report", icon: ClipboardList },
-  { id: "map", label: "Map", icon: Map },
-  { id: "responsemap", label: "Feature map", icon: ScatterChart },
-  { id: "promptmap", label: "Prompt map", icon: MessageSquare },
+  { id: "maps", label: "Maps", icon: Map },
   { id: "detail", label: "Feature detail", icon: FlaskConical },
 ] as const;
 
@@ -116,13 +112,8 @@ export default function App() {
           reportBattles={bundle.reportBattles}
         />
       )}
-      {tab === "map" && <MapView map={bundle.map} />}
-      {tab === "responsemap" && <ResponseMapView map={bundle.responseMap} />}
-      {tab === "promptmap" && (
-        <PromptMapView
-          map={bundle.promptMap}
-          onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("relationship"); }}
-        />
+      {tab === "maps" && (
+        <MapsTab onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("relationship"); }} />
       )}
       {tab === "detail" && <FeatureDetail features={bundle.features} examples={bundle.examples} />}
     </div>
