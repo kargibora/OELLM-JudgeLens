@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Diagnosis, Feature, ReportBattles } from "../types";
+import type { Diagnosis, Examples, Feature, ReportBattles } from "../types";
 import { Card, Explain, Metric, conceptLabel, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
 import GapQuadrant, { type QuadrantPoint } from "./GapQuadrant";
@@ -25,7 +25,7 @@ type FireMode = "freq" | "paired" | "model";
 const FIRE_COLOR = "rgba(96,165,250,0.85)"; // frequency is neutral → blue, not good/bad
 const clip = (s: string, n = 48) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
-type BarRow = { label: string; full: string; v: number; color: string; tip?: string };
+type BarRow = { label: string; full: string; v: number; color: string; tip?: string; fid?: number };
 type Bound = number | string | ((n: number) => number);
 
 // greedy word-wrap into up to `maxLines` lines that fit `maxChars`; the last line is
@@ -86,6 +86,7 @@ function BarPanel({
   yWidth = 250,
   labels = true,
   axis = false,
+  onBarClick,
 }: {
   data: BarRow[];
   domain: [Bound, Bound];
@@ -94,6 +95,7 @@ function BarPanel({
   yWidth?: number;
   labels?: boolean;
   axis?: boolean;
+  onBarClick?: (row: BarRow) => void;
 }) {
   if (data.length === 0)
     return <p className="px-1 py-6 text-center text-sm text-slate-500">(nothing to show)</p>;
@@ -121,6 +123,12 @@ function BarPanel({
           dataKey="v"
           radius={[0, 4, 4, 0]}
           isAnimationActive={false}
+          cursor={onBarClick ? "pointer" : undefined}
+          onClick={(entry: any) => {
+            if (!onBarClick) return;
+            const row = (entry?.payload ?? entry) as BarRow;
+            if (row?.fid != null) onBarClick(row);
+          }}
           label={labels ? { position: "right", formatter: fmtVal, fill: "#94a3b8", fontSize: 11 } : undefined}
         >
           {data.map((d, i) => (
@@ -204,10 +212,12 @@ export default function ReportCard({
   diagnosis,
   features,
   reportBattles,
+  examples,
 }: {
   diagnosis: Diagnosis | null;
   features: Feature[];
   reportBattles: ReportBattles | null;
+  examples: Examples | null;
 }) {
   const [model, setModel] = useState(diagnosis?.models?.[0] ?? "");
   const [openPrompt, setOpenPrompt] = useState<string | null>(null);
@@ -215,6 +225,11 @@ export default function ReportCard({
   const [compareModel, setCompareModel] = useState<string>("");
   const [query, setQuery] = useState("");
   const [showQuadrant, setShowQuadrant] = useState(false);
+  // a clicked feature bar opens example answers for that feature; `src` keeps the drill-in
+  // next to where it was clicked (fire panel vs gap panel).
+  const [openFeat, setOpenFeat] = useState<{ fid: number; src: "fire" | "gap" } | null>(null);
+  const [promptQuery, setPromptQuery] = useState("");
+  const [showAllPrompts, setShowAllPrompts] = useState(false);
 
   // model picker options: search filter + weakest-first (gaps are the point), folded in
   // from the old Model-diagnosis tab
@@ -321,19 +336,26 @@ export default function ReportCard({
 
   const wr = row?.win_rate ?? 0.5;
   const promptTypes = row?.prompt_types ?? [];
-  const strongPrompts = useMemo(
-    () => [...promptTypes].sort((a, b) => b.win_rate - a.win_rate).slice(0, 10),
-    [promptTypes]
+  // search filter over prompt types
+  const promptMatches = useMemo(() => {
+    const q = promptQuery.trim().toLowerCase();
+    return q ? promptTypes.filter((p) => p.concept.toLowerCase().includes(q)) : promptTypes;
+  }, [promptTypes, promptQuery]);
+  // expanded/search view = ONE combined list (strongest→weakest, all matches).
+  const expandedPrompts = showAllPrompts || promptQuery.trim() !== "";
+  const allPromptsSorted = useMemo(
+    () => [...promptMatches].sort((a, b) => b.win_rate - a.win_rate),
+    [promptMatches]
   );
-  // exclude anything already shown as "Strongest" so a middling concept can't appear
-  // in both columns (and double-open its drill-in)
+  // default view = top-10 strongest + bottom-10 weakest (mutually exclusive)
+  const strongPrompts = useMemo(() => allPromptsSorted.slice(0, 10), [allPromptsSorted]);
   const weakPrompts = useMemo(() => {
     const strong = new Set(strongPrompts.map((p) => p.concept));
-    return [...promptTypes]
+    return [...promptMatches]
       .sort((a, b) => a.win_rate - b.win_rate)
       .filter((p) => !strong.has(p.concept))
       .slice(0, 10);
-  }, [promptTypes, strongPrompts]);
+  }, [promptMatches, strongPrompts]);
   const relations = useMemo(
     () =>
       [...(row?.relations ?? [])]
@@ -346,7 +368,7 @@ export default function ReportCard({
   const fireBars = (rows: typeof fireRows): BarRow[] =>
     rows.map((v) => {
       if (fireMode === "freq")
-        return { label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in" };
+        return { label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in", fid: v.fid };
       if (fireMode === "paired")
         return {
           label: clip(v.concept),
@@ -354,6 +376,7 @@ export default function ReportCard({
           v: v.val,
           color: fireDivergeColor(v.val, pairedRef),
           tip: `Δ vs other models, same prompt · fires ${pct(v.fire, 0)}`,
+          fid: v.fid,
         };
       return {
         label: clip(v.concept),
@@ -361,6 +384,7 @@ export default function ReportCard({
         v: v.val,
         color: fireDivergeColor(v.val),
         tip: `fires ${pct(v.fire, 0)} · ${cmpModel} ${pct(v.base, 0)}`,
+        fid: v.fid,
       };
     });
   const ppFmt = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v * 100)}pp`;
@@ -392,6 +416,7 @@ export default function ReportCard({
     v: v.reward ?? 0,
     color: divergeColor(v.reward ?? 0, WINRATE_REF),
     tip: `Δwin (length-controlled) · ${(v.under ?? 0).toFixed(2)} vs pool`,
+    fid: v.fid,
   }));
   const relationBars: BarRow[] = relations.map((r) => {
     const full = `${r.prompt_concept} ⇒ ${r.response_concept}`;
@@ -458,7 +483,7 @@ export default function ReportCard({
           </span>
           <select
             value={model}
-            onChange={(e) => { setModel(e.target.value); setOpenPrompt(null); }}
+            onChange={(e) => { setModel(e.target.value); setOpenPrompt(null); setOpenFeat(null); }}
             className="w-96 max-w-full rounded-lg border border-edge bg-ink px-3 py-2 text-sm"
           >
             {filteredModels.map((m) => (
@@ -537,15 +562,26 @@ export default function ReportCard({
                 )}
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
-                <Section title={moreTitle} hint={moreHint}>
+                <Section title={moreTitle} hint={`${moreHint} · click a bar to see example answers`}>
                   <BarPanel data={fireBars(moreFire)} domain={fireDomain} fmtVal={fireFmt}
-                    zero={relMode} axis={relMode} labels={!relMode} />
+                    zero={relMode} axis={relMode} labels={!relMode}
+                    onBarClick={(r) => r.fid != null && setOpenFeat({ fid: r.fid, src: "fire" })} />
                 </Section>
-                <Section title={lessTitle} hint={lessHint}>
+                <Section title={lessTitle} hint={`${lessHint} · click a bar to see example answers`}>
                   <BarPanel data={fireBars(lessFire)} domain={fireDomain} fmtVal={fireFmt}
-                    zero={relMode} axis={relMode} labels={!relMode} />
+                    zero={relMode} axis={relMode} labels={!relMode}
+                    onBarClick={(r) => r.fid != null && setOpenFeat({ fid: r.fid, src: "fire" })} />
                 </Section>
               </div>
+              {openFeat?.src === "fire" && (
+                <FeatureExamplesDrill
+                  fid={openFeat.fid}
+                  concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
+                  examples={examples}
+                  model={model}
+                  onClose={() => setOpenFeat(null)}
+                />
+              )}
             </div>
           )}
 
@@ -558,7 +594,19 @@ export default function ReportCard({
                 No rewarded behaviour is under-expressed.
               </p>
             ) : (
-              <BarPanel data={gapBars} domain={[0, "dataMax"]} fmtVal={(v) => `+${v.toFixed(2)}`} />
+              <BarPanel data={gapBars} domain={[0, "dataMax"]} fmtVal={(v) => `+${v.toFixed(2)}`}
+                onBarClick={(r) => r.fid != null && setOpenFeat({ fid: r.fid, src: "gap" })} />
+            )}
+            {openFeat?.src === "gap" && (
+              <div className="mt-3">
+                <FeatureExamplesDrill
+                  fid={openFeat.fid}
+                  concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
+                  examples={examples}
+                  model={model}
+                  onClose={() => setOpenFeat(null)}
+                />
+              </div>
             )}
             <button
               onClick={() => setShowQuadrant((s) => !s)}
@@ -587,16 +635,44 @@ export default function ReportCard({
                 No prompt concept cleared the support floor for this model.
               </p>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div>
-                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-good">Strongest</h4>
-                  <div className="flex flex-col">{promptList(strongPrompts)}</div>
+              <>
+                <div className="mb-2 flex flex-wrap items-center gap-3">
+                  <input
+                    value={promptQuery}
+                    onChange={(e) => setPromptQuery(e.target.value)}
+                    placeholder="filter prompt types…"
+                    className="w-60 rounded-lg border border-edge bg-ink px-3 py-1.5 text-sm placeholder:text-slate-600"
+                  />
+                  <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <input type="checkbox" checked={showAllPrompts} onChange={(e) => setShowAllPrompts(e.target.checked)} className="accent-accent" />
+                    show all {promptMatches.length}
+                  </label>
+                  {!expandedPrompts && promptMatches.length > 20 && (
+                    <span className="text-[11px] text-slate-500">showing top &amp; bottom 10 of {promptMatches.length}</span>
+                  )}
                 </div>
-                <div>
-                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-bad">Weakest</h4>
-                  <div className="flex flex-col">{promptList(weakPrompts)}</div>
-                </div>
-              </div>
+                {promptMatches.length === 0 ? (
+                  <p className="px-1 py-4 text-sm text-slate-500">No prompt type matches “{promptQuery}”.</p>
+                ) : expandedPrompts ? (
+                  <div>
+                    <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Strongest → weakest ({allPromptsSorted.length})
+                    </h4>
+                    <div className="flex flex-col">{promptList(allPromptsSorted)}</div>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-good">Strongest</h4>
+                      <div className="flex flex-col">{promptList(strongPrompts)}</div>
+                    </div>
+                    <div>
+                      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-bad">Weakest</h4>
+                      <div className="flex flex-col">{promptList(weakPrompts)}</div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             {row.prompt_types && row.prompt_types.length > 0 && !reportBattles?.[model] && (
               <p className="mt-2 text-[11px] text-slate-500">
@@ -627,6 +703,83 @@ export default function ReportCard({
               />
             )}
           </Section>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Drill-in for a clicked feature bar: example answers that EXHIBIT the behaviour. The
+// example's z (= z_diff, f(A)−f(B)) sign says which side expresses the feature more, so we
+// show that side's completion + the model that produced it. This model's own examples are
+// surfaced first; if the sampled top-activating examples include none from this model, we
+// fall back to the global strongest (honestly labelled).
+function FeatureExamplesDrill({
+  fid,
+  concept,
+  examples,
+  model,
+  onClose,
+}: {
+  fid: number;
+  concept: string;
+  examples: Examples | null;
+  model: string;
+  onClose: () => void;
+}) {
+  const raw = examples?.[String(fid)] ?? [];
+  const items = raw
+    .map((e) => {
+      const aSide = e.z >= 0; // A expresses the feature more when z_diff > 0
+      const exModel = aSide ? e.model_a : e.model_b;
+      return {
+        z: e.z,
+        prompt: e.prompt,
+        exModel,
+        completion: aSide ? e.completion_a : e.completion_b,
+        byThisModel: exModel === model,
+      };
+    })
+    .sort((a, b) => Number(b.byThisModel) - Number(a.byThisModel) || Math.abs(b.z) - Math.abs(a.z));
+  const mine = items.filter((i) => i.byThisModel).length;
+  const clipC = (s: string, n = 1600) => (s.length > n ? s.slice(0, n) + " …[truncated]" : s);
+
+  return (
+    <div className="mt-3 rounded-xl border border-accent/40 bg-accent/5 p-3">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <h4 className="text-sm font-semibold text-slate-200">
+          Example answers exhibiting “{concept}”
+        </h4>
+        <button onClick={onClose} className="text-xs text-slate-500 hover:text-slate-300">close</button>
+      </div>
+      {raw.length === 0 ? (
+        <p className="px-1 py-3 text-xs text-slate-500">
+          No examples for this feature in the bundle (only verified features carry examples — re-export
+          with <code>--examples-per-feature</code> and a corpus to populate).
+        </p>
+      ) : (
+        <>
+          <p className="mb-2 text-[11px] text-slate-500">
+            {mine > 0
+              ? `${mine} of these top-activating examples are from ${model} (shown first).`
+              : `None of the sampled top-activating examples are from ${model}; showing where this behaviour fires strongest across models — so you can see what it looks like.`}
+          </p>
+          <div className="flex flex-col gap-3">
+            {items.map((it, i) => (
+              <div key={i} className="rounded-lg border border-edge bg-ink/40 p-2 text-xs">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span className={`rounded px-1.5 py-0.5 font-medium ${it.byThisModel ? "bg-accent/20 text-accent" : "bg-slate-600/25 text-slate-400"}`}>
+                    {it.exModel}{it.byThisModel ? " · this model" : ""}
+                  </span>
+                  <span className="font-mono text-slate-500">activation {it.z >= 0 ? "+" : ""}{it.z.toFixed(2)}</span>
+                </div>
+                <div className="mb-1 text-slate-400">
+                  <span className="font-semibold text-slate-300">prompt:</span> {clip(it.prompt, 280)}
+                </div>
+                <div className="whitespace-pre-wrap text-slate-300">{clipC(it.completion)}</div>
+              </div>
+            ))}
+          </div>
         </>
       )}
     </div>
