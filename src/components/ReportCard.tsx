@@ -11,8 +11,9 @@ import {
   YAxis,
 } from "recharts";
 import type { Diagnosis, Feature, ReportBattles } from "../types";
-import { Card, Explain, Metric, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
+import { Card, Explain, Metric, conceptLabel, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
+import GapQuadrant, { type QuadrantPoint } from "./GapQuadrant";
 
 type FireMode = "freq" | "paired" | "model";
 
@@ -212,6 +213,18 @@ export default function ReportCard({
   const [openPrompt, setOpenPrompt] = useState<string | null>(null);
   const [fireMode, setFireMode] = useState<FireMode>("freq");
   const [compareModel, setCompareModel] = useState<string>("");
+  const [query, setQuery] = useState("");
+  const [showQuadrant, setShowQuadrant] = useState(false);
+
+  // model picker options: search filter + weakest-first (gaps are the point), folded in
+  // from the old Model-diagnosis tab
+  const filteredModels = useMemo(
+    () =>
+      (diagnosis?.models ?? [])
+        .filter((m) => m.toLowerCase().includes(query.toLowerCase()))
+        .sort((a, b) => (diagnosis?.rows[a]?.win_rate ?? 0) - (diagnosis?.rows[b]?.win_rate ?? 0)),
+    [diagnosis, query]
+  );
 
   const featureById = useMemo(() => {
     const m: Record<number, Feature> = {};
@@ -248,6 +261,22 @@ export default function ReportCard({
 
   const named = useMemo(() => view.filter((v) => v.concept && v.concept.trim() !== ""), [view]);
   const hasFire = !!row?.fire_rate;
+
+  // points for the folded-in Gap quadrant scatter (delta_vs_pool × reward); all features
+  const quadrantPoints: QuadrantPoint[] = useMemo(() => {
+    const behaviorOf = (i: number) =>
+      diagnosis?.clusters && diagnosis?.behaviors
+        ? diagnosis.behaviors[String(diagnosis.clusters[i])] ?? ""
+        : "";
+    return view.map((v) => ({
+      fid: v.fid,
+      concept: conceptLabel(v.fid, v.concept),
+      behavior: behaviorOf(v.idx),
+      delta: v.under ?? 0,
+      win: v.reward ?? 0,
+      gap: (v.under ?? 0) < 0 && (v.reward ?? 0) > 0,
+    }));
+  }, [view, diagnosis]);
 
   const fired = useMemo(() => named.filter((v) => v.fire != null), [named]);
   // per-feature display value for the current fire mode:
@@ -362,7 +391,7 @@ export default function ReportCard({
     full: v.concept,
     v: v.reward ?? 0,
     color: divergeColor(v.reward ?? 0, WINRATE_REF),
-    tip: "Δwin (length-controlled)",
+    tip: `Δwin (length-controlled) · ${(v.under ?? 0).toFixed(2)} vs pool`,
   }));
   const relationBars: BarRow[] = relations.map((r) => {
     const full = `${r.prompt_concept} ⇒ ${r.response_concept}`;
@@ -413,21 +442,32 @@ export default function ReportCard({
         prompt concepts elicit which response concepts and whether that <i>helps it win</i>.
       </Explain>
 
-      <div className="flex flex-col gap-1">
-        <span className="text-xs uppercase tracking-wider text-slate-400">
-          model ({diagnosis.models.length})
-        </span>
-        <select
-          value={model}
-          onChange={(e) => { setModel(e.target.value); setOpenPrompt(null); }}
-          className="w-96 max-w-full rounded-lg border border-edge bg-ink px-3 py-2 text-sm"
-        >
-          {diagnosis.models.map((m) => (
-            <option key={m} value={m}>
-              {m} · {pct(diagnosis.rows[m]?.win_rate, 0)}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wider text-slate-400">search</span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="filter models…"
+            className="w-56 rounded-lg border border-edge bg-ink px-3 py-2 text-sm placeholder:text-slate-600"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wider text-slate-400">
+            model ({filteredModels.length}, weakest first)
+          </span>
+          <select
+            value={model}
+            onChange={(e) => { setModel(e.target.value); setOpenPrompt(null); }}
+            className="w-96 max-w-full rounded-lg border border-edge bg-ink px-3 py-2 text-sm"
+          >
+            {filteredModels.map((m) => (
+              <option key={m} value={m}>
+                {m} · {pct(diagnosis.rows[m]?.win_rate, 0)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {!row ? (
@@ -519,6 +559,21 @@ export default function ReportCard({
               </p>
             ) : (
               <BarPanel data={gapBars} domain={[0, "dataMax"]} fmtVal={(v) => `+${v.toFixed(2)}`} />
+            )}
+            <button
+              onClick={() => setShowQuadrant((s) => !s)}
+              className="mt-3 flex w-full items-center gap-2 text-left text-xs font-semibold text-slate-300 hover:text-slate-100"
+            >
+              {showQuadrant ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              Gap quadrant
+              <span className="font-normal text-slate-500">
+                — delta vs pool × reward; top-left (red) = under-expressed yet rewarded
+              </span>
+            </button>
+            {showQuadrant && (
+              <div className="mt-2">
+                <GapQuadrant points={quadrantPoints} />
+              </div>
             )}
           </Section>
 
