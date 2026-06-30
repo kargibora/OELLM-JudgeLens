@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -9,21 +10,35 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Diagnosis, Feature } from "../types";
+import type { Diagnosis, Feature, ReportBattles } from "../types";
 import { Card, Explain, Metric, divergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
 
 // One consolidated, visual per-model report: what this model does a lot / rarely,
 // the rewarded behaviours it under-expresses, the prompt types it's strong / weak
-// on, and — per model — which prompt concepts elicit which response concepts and
-// whether that helps it win. Mirrors `prefscope report`.
+// on (click a prompt type to see its battles), and — per model — which prompt
+// concepts elicit which response concepts and whether that helps it win.
 
 const FIRE_COLOR = "rgba(96,165,250,0.85)"; // frequency is neutral → blue, not good/bad
-const clip = (s: string, n = 46) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const clip = (s: string, n = 48) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
-type BarRow = { label: string; v: number; color: string; tip?: string };
-
+type BarRow = { label: string; full: string; v: number; color: string; tip?: string };
 type Bound = number | string | ((n: number) => number);
+
+// y-axis tick that shows the (possibly truncated) label but carries the FULL text
+// in an SVG <title>, so long concept names are readable on hover.
+const YTick = (props: any) => {
+  const { x, y, payload, fulls } = props;
+  const full = fulls?.[payload?.index] ?? payload?.value;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={-4} dy={4} textAnchor="end" fill="#94a3b8" fontSize={11}>
+        <title>{full}</title>
+        {payload?.value}
+      </text>
+    </g>
+  );
+};
 
 function BarPanel({
   data,
@@ -39,8 +54,8 @@ function BarPanel({
   fmtVal: (v: number) => string;
   zero?: boolean;
   yWidth?: number;
-  labels?: boolean; // inline value labels at the bar end
-  axis?: boolean; // show the numeric x-axis (use for signed panels instead of labels)
+  labels?: boolean;
+  axis?: boolean;
 }) {
   if (data.length === 0)
     return <p className="px-1 py-6 text-center text-sm text-slate-500">(nothing to show)</p>;
@@ -53,15 +68,15 @@ function BarPanel({
           type="category"
           dataKey="label"
           width={yWidth}
-          stroke="#94a3b8"
-          fontSize={11}
           tickLine={false}
           axisLine={false}
+          tick={<YTick fulls={data.map((d) => d.full)} />}
         />
         <Tooltip
           cursor={{ fill: "rgba(148,163,184,0.08)" }}
           contentStyle={{ background: "#0b0f17", border: "1px solid #1f2937", borderRadius: 8 }}
-          formatter={(v: number, _n, p) => [fmtVal(v), p?.payload?.tip ?? ""]}
+          labelFormatter={(_l: any, p: any) => p?.[0]?.payload?.full ?? ""}
+          formatter={(v: any, _n: any, p: any) => [fmtVal(Number(v)), p?.payload?.tip ?? ""]}
         />
         {zero && <ReferenceLine x={0} stroke="#475569" />}
         <Bar
@@ -105,14 +120,59 @@ function Section({
   );
 }
 
+type PT = { concept: string; win_rate: number; n: number };
+
+// clickable prompt-type row: full name (wraps), inline win bar vs the model's own
+// average, win%, and battle count n. Clicking opens the drill-in below.
+function PromptTypeRow({
+  p,
+  modelWin,
+  open,
+  onClick,
+  drillable,
+}: {
+  p: PT;
+  modelWin: number;
+  open: boolean;
+  onClick: () => void;
+  drillable: boolean;
+}) {
+  const color = divergeColor(p.win_rate - modelWin, WINRATE_REF);
+  const Chevron = open ? ChevronDown : ChevronRight;
+  return (
+    <button
+      onClick={onClick}
+      disabled={!drillable}
+      className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition ${
+        drillable ? "hover:bg-edge/40" : "cursor-default"
+      } ${open ? "bg-edge/60" : ""}`}
+    >
+      {drillable ? (
+        <Chevron size={14} className="shrink-0 text-slate-500" />
+      ) : (
+        <span className="w-[14px] shrink-0" />
+      )}
+      <span className="flex-1 text-sm text-slate-300">{p.concept}</span>
+      <span className="hidden h-2 w-24 shrink-0 overflow-hidden rounded-full bg-edge/50 sm:block">
+        <span className="block h-full rounded-full" style={{ width: `${Math.round(p.win_rate * 100)}%`, background: color }} />
+      </span>
+      <span className="w-10 shrink-0 text-right text-sm tabular-nums text-slate-200">{pct(p.win_rate, 0)}</span>
+      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-slate-500">n={p.n.toLocaleString()}</span>
+    </button>
+  );
+}
+
 export default function ReportCard({
   diagnosis,
   features,
+  reportBattles,
 }: {
   diagnosis: Diagnosis | null;
   features: Feature[];
+  reportBattles: ReportBattles | null;
 }) {
   const [model, setModel] = useState(diagnosis?.models?.[0] ?? "");
+  const [openPrompt, setOpenPrompt] = useState<string | null>(null);
 
   const featureById = useMemo(() => {
     const m: Record<number, Feature> = {};
@@ -122,7 +182,6 @@ export default function ReportCard({
 
   const row = diagnosis?.rows[model];
 
-  // per-feature view: concept + this model's fire rate + under-expression + reward
   const view = useMemo(() => {
     if (!row || !diagnosis) return [];
     return diagnosis.features.map((fid, i) => {
@@ -145,8 +204,6 @@ export default function ReportCard({
     () => [...fired].sort((a, b) => (b.fire ?? 0) - (a.fire ?? 0)).slice(0, 12),
     [fired]
   );
-  // exclude anything already in "Does a lot" so a small feature set doesn't show
-  // the same concepts mirror-imaged in both panels
   const doesRarely = useMemo(() => {
     const lot = new Set(doesALot.map((v) => v.fid));
     return [...fired]
@@ -169,10 +226,15 @@ export default function ReportCard({
     () => [...promptTypes].sort((a, b) => b.win_rate - a.win_rate).slice(0, 10),
     [promptTypes]
   );
-  const weakPrompts = useMemo(
-    () => [...promptTypes].sort((a, b) => a.win_rate - b.win_rate).slice(0, 10),
-    [promptTypes]
-  );
+  // exclude anything already shown as "Strongest" so a middling concept can't appear
+  // in both columns (and double-open its drill-in)
+  const weakPrompts = useMemo(() => {
+    const strong = new Set(strongPrompts.map((p) => p.concept));
+    return [...promptTypes]
+      .sort((a, b) => a.win_rate - b.win_rate)
+      .filter((p) => !strong.has(p.concept))
+      .slice(0, 10);
+  }, [promptTypes, strongPrompts]);
   const relations = useMemo(
     () =>
       [...(row?.relations ?? [])]
@@ -181,34 +243,21 @@ export default function ReportCard({
     [row]
   );
 
-  // --- bar rows ---
   const fireBars = (rows: typeof doesALot): BarRow[] =>
-    rows.map((v) => ({
-      label: clip(v.concept),
-      v: v.fire ?? 0,
-      color: FIRE_COLOR,
-      tip: "fires in",
-    }));
+    rows.map((v) => ({ label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in" }));
   const gapBars: BarRow[] = rewardedGaps.map((v) => ({
     label: clip(v.concept),
+    full: v.concept,
     v: v.reward ?? 0,
     color: divergeColor(v.reward ?? 0, WINRATE_REF),
     tip: "Δwin (length-controlled)",
   }));
-  const promptBars = (rows: typeof strongPrompts): BarRow[] =>
-    rows.map((p) => ({
-      label: clip(p.concept),
-      v: p.win_rate,
-      // colour relative to the model's OWN average win rate: above = green, below = red
-      color: divergeColor(p.win_rate - wr, WINRATE_REF),
-      tip: `win rate · n=${p.n}`,
-    }));
-  const relationBars: BarRow[] = relations.map((r) => ({
-    label: clip(`${r.prompt_concept} ⇒ ${r.response_concept}`, 60),
-    v: r.delta_win,
-    color: divergeColor(r.delta_win, WINRATE_REF),
-    tip: `Δwin · n=${r.n}`,
-  }));
+  const relationBars: BarRow[] = relations.map((r) => {
+    const full = `${r.prompt_concept} ⇒ ${r.response_concept}`;
+    return { label: clip(full, 56), full, v: r.delta_win, color: divergeColor(r.delta_win, WINRATE_REF), tip: `Δwin · n=${r.n}` };
+  });
+
+  const battlesFor = (concept: string) => reportBattles?.[model]?.[concept] ?? [];
 
   if (!diagnosis)
     return <Card>No diagnosis exported. Build a bank and re-run export_viewer_data.py.</Card>;
@@ -228,13 +277,28 @@ export default function ReportCard({
       </Card>
     );
 
+  const togglePrompt = (c: string) => setOpenPrompt((cur) => (cur === c ? null : c));
+  const promptList = (rows: PT[]) =>
+    rows.map((p) => (
+      <div key={p.concept}>
+        <PromptTypeRow
+          p={p}
+          modelWin={wr}
+          open={openPrompt === p.concept}
+          onClick={() => togglePrompt(p.concept)}
+          drillable={battlesFor(p.concept).length > 0}
+        />
+        {openPrompt === p.concept && <BattleDrill battles={battlesFor(p.concept)} model={model} />}
+      </div>
+    ));
+
   return (
     <div className="flex flex-col gap-4">
       <Explain>
         A per-model <b>report card</b>: what this model <i>does a lot</i> / <i>rarely</i>, the
         rewarded behaviours it <i>under-expresses</i> (gaps worth closing), the prompt types it's
-        strongest / weakest on, and — for this model — which prompt concepts elicit which response
-        concepts and whether that <i>helps it win</i>. Mirrors <code>prefscope report</code>.
+        strongest / weakest on (<i>click one to see its battles</i>), and — for this model — which
+        prompt concepts elicit which response concepts and whether that <i>helps it win</i>.
       </Explain>
 
       <div className="flex flex-col gap-1">
@@ -243,7 +307,7 @@ export default function ReportCard({
         </span>
         <select
           value={model}
-          onChange={(e) => setModel(e.target.value)}
+          onChange={(e) => { setModel(e.target.value); setOpenPrompt(null); }}
           className="w-96 max-w-full rounded-lg border border-edge bg-ink px-3 py-2 text-sm"
         >
           {diagnosis.models.map((m) => (
@@ -287,7 +351,7 @@ export default function ReportCard({
 
           <Section
             title="Rewarded gaps"
-            hint="behaviours it under-expresses that humans reward (length-controlled Δwin) — gaps worth closing"
+            hint="behaviours this model under-expresses that humans reward (length-controlled Δwin-rate) — i.e. doing more of them tends to win, but it currently does them less than the model pool. Gaps worth closing."
           >
             {gapBars.length === 0 ? (
               <p className="px-1 py-4 text-sm text-slate-500">
@@ -300,7 +364,7 @@ export default function ReportCard({
 
           <Section
             title="Strong / weak prompt types"
-            hint="win rate per prompt concept, coloured vs this model's own average"
+            hint="win rate per prompt concept, vs this model's own average. Click a row to see sample battles of this model on that prompt type."
             empty={!row.prompt_types}
           >
             {promptTypes.length === 0 ? (
@@ -310,24 +374,26 @@ export default function ReportCard({
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
                 <div>
-                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-good">
-                    Strongest
-                  </h4>
-                  <BarPanel data={promptBars(strongPrompts)} domain={[0, 1]} fmtVal={(v) => pct(v, 0)} />
+                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-good">Strongest</h4>
+                  <div className="flex flex-col">{promptList(strongPrompts)}</div>
                 </div>
                 <div>
-                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-bad">
-                    Weakest
-                  </h4>
-                  <BarPanel data={promptBars(weakPrompts)} domain={[0, 1]} fmtVal={(v) => pct(v, 0)} />
+                  <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-bad">Weakest</h4>
+                  <div className="flex flex-col">{promptList(weakPrompts)}</div>
                 </div>
               </div>
+            )}
+            {row.prompt_types && row.prompt_types.length > 0 && !reportBattles?.[model] && (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Rows aren't clickable for this model — re-export with <code>--report-battles</code> to
+                enable the battle drill-in.
+              </p>
             )}
           </Section>
 
           <Section
-            title="Prompt → Response (this model)"
-            hint="within a prompt type, does producing this response concept help this model win? (Δwin = win rate when it fires minus when it doesn't)"
+            title="What helps this model win, by prompt type"
+            hint="within a prompt type, does producing this response concept help this model win? Δwin = win rate when it fires minus when it doesn't. (Per-model; the 'Prompt → Response' tab is the global, preference-independent view.)"
             empty={!row.relations}
           >
             {relationBars.length === 0 ? (
@@ -348,6 +414,38 @@ export default function ReportCard({
           </Section>
         </>
       )}
+    </div>
+  );
+}
+
+function BattleDrill({ battles, model }: { battles: { prompt: string; self: string; other: string; outcome: string }[]; model: string }) {
+  if (battles.length === 0)
+    return (
+      <p className="px-3 py-2 text-xs text-slate-500">
+        No sample battles exported for this prompt type.
+      </p>
+    );
+  const tone = (o: string) =>
+    o === "win" ? "text-good" : o === "loss" ? "text-bad" : "text-slate-400";
+  return (
+    <div className="mb-2 ml-5 flex flex-col gap-3 border-l border-edge pl-3">
+      {battles.map((b, i) => (
+        <div key={i} className="rounded-lg border border-edge bg-ink/40 p-2 text-xs">
+          <div className="mb-1 text-slate-400">
+            <span className="font-semibold text-slate-300">prompt:</span> {b.prompt}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div>
+              <div className={`mb-0.5 font-semibold ${tone(b.outcome)}`}>{model} ({b.outcome})</div>
+              <div className="whitespace-pre-wrap text-slate-300">{b.self}</div>
+            </div>
+            <div>
+              <div className="mb-0.5 font-semibold text-slate-500">opponent</div>
+              <div className="whitespace-pre-wrap text-slate-400">{b.other}</div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

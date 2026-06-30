@@ -243,6 +243,16 @@ export interface ElicitationData {
   n_shown?: number; // how many edges survived the payload cap (≤ n_edges)
 }
 
+// --- report-card drill-in: per (model × prompt-concept) sample battles ---
+export interface ReportBattle {
+  prompt: string;
+  self: string; // this model's answer
+  other: string; // the opponent's answer
+  outcome: "win" | "loss" | "tie";
+}
+// { model: { promptConceptName: ReportBattle[] } }
+export type ReportBattles = Record<string, Record<string, ReportBattle[]>>;
+
 export interface Bundle {
   meta: Meta;
   features: Feature[];
@@ -257,4 +267,5 @@ export interface Bundle {
   responseMap: ResponseMapData | null;
   conditional: ConditionalData | null;
   elicitation: ElicitationData | null;
+  reportBattles: ReportBattles | null;
 }
