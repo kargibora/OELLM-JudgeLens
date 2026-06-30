@@ -80,7 +80,7 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
         return (
           <li key={`${e.px}:${e.cy}`} className="flex items-center gap-2 text-sm">
             <span className="w-1/2 text-slate-300">
-              <ConceptLabel id={id} name={name} />
+              <ConceptLabel id={id} name={name} wrap />
             </span>
             <div className="relative h-4 flex-1 rounded bg-ink/60">
               <div
