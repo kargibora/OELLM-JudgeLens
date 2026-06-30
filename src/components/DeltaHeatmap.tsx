@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeltaData, DeltaCell } from "../types";
-import { Card, Explain, divergeColor } from "./ui";
+import { Card, Explain, conceptLabel, divergeColor } from "./ui";
 
 // neutral fill for not-significant / not-tested cells — deliberately NOT white,
 // so "no reliable effect" never reads as "zero effect".
@@ -196,9 +196,9 @@ export default function DeltaHeatmap(
               <div
                 className="shrink-0 truncate pr-2 text-right text-[11px] text-slate-300"
                 style={{ width: 168 }}
-                title={r.name}
+                title={conceptLabel(r.id, r.name)}
               >
-                {r.name}
+                {conceptLabel(r.id, r.name)}
               </div>
               {vcols.map((c) => {
                 const v = cellValue(r.id, c);

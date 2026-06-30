@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, X } from "lucide-react";
 import type { ElicEdge, ElicitationData } from "../types";
-import { Card, Caveat, Explain } from "./ui";
+import { Card, Caveat, ConceptLabel, Explain, conceptLabel, isUnnamed } from "./ui";
 
 type Dir = "elicit" | "suppress" | "both";
 
@@ -14,34 +14,42 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
   const [focusP, setFocusP] = useState<number | null>(null);
   const [focusC, setFocusC] = useState<number | null>(null);
   const [sigOnly, setSigOnly] = useState(true);
+  const [namedOnly, setNamedOnly] = useState(true);
   const [dir, setDir] = useState<Dir>("elicit");
   const [query, setQuery] = useState("");
 
   const pName = useMemo(() => {
-    const m = new Map<number, string>();
+    const m = new Map<number, string | null>();
     data?.prompt_concepts.forEach((p) => m.set(p.id, p.concept));
     return m;
   }, [data]);
   const cName = useMemo(() => {
-    const m = new Map<number, string>();
+    const m = new Map<number, string | null>();
     data?.response_concepts.forEach((c) => m.set(c.id, c.concept));
     return m;
   }, [data]);
+  const namedCount = useMemo(
+    () => (data?.response_concepts.filter((c) => !isUnnamed(c.concept)).length ?? 0),
+    [data]
+  );
 
   const filtered = useMemo(() => {
     if (!data) return [] as ElicEdge[];
     const q = query.trim().toLowerCase();
     return data.edges.filter((e) => {
       if (sigOnly && !e.sig) return false;
+      // most response features aren't annotated yet (null / legacy "nan"); hide those
+      // by default so the table isn't mostly "feature N" noise
+      if (namedOnly && (isUnnamed(cName.get(e.cy)) || isUnnamed(pName.get(e.px)))) return false;
       if (dir === "elicit" && e.l2 <= 0) return false;
       if (dir === "suppress" && e.l2 >= 0) return false;
       if (q) {
-        const hay = `${pName.get(e.px) ?? ""} ${cName.get(e.cy) ?? ""}`.toLowerCase();
+        const hay = `${conceptLabel(e.px, pName.get(e.px))} ${conceptLabel(e.cy, cName.get(e.cy))}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [data, sigOnly, dir, query, pName, cName]);
+  }, [data, sigOnly, namedOnly, dir, query, pName, cName]);
 
   const ranked = useMemo(
     () => [...filtered].sort((a, b) => Math.abs(b.l2) - Math.abs(a.l2)).slice(0, 60),
@@ -66,12 +74,13 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
   const BarList = ({ edges, side }: { edges: ElicEdge[]; side: "response" | "prompt" }) => (
     <ul className="flex flex-col gap-1">
       {edges.map((e) => {
-        const label = side === "response" ? cName.get(e.cy) : pName.get(e.px);
+        const id = side === "response" ? e.cy : e.px;
+        const name = side === "response" ? cName.get(e.cy) : pName.get(e.px);
         const pos = e.l2 >= 0;
         return (
           <li key={`${e.px}:${e.cy}`} className="flex items-center gap-2 text-sm">
-            <span className="w-1/2 truncate text-slate-300" title={label}>
-              {label}
+            <span className="w-1/2 text-slate-300">
+              <ConceptLabel id={id} name={name} />
             </span>
             <div className="relative h-4 flex-1 rounded bg-ink/60">
               <div
@@ -150,6 +159,11 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
             <input type="checkbox" checked={sigOnly} onChange={(e) => setSigOnly(e.target.checked)} className="accent-accent" />
             significant only
           </label>
+          <label className="flex items-center gap-1.5 text-xs text-slate-400"
+                 title="most response features aren't annotated yet; hide unnamed ones">
+            <input type="checkbox" checked={namedOnly} onChange={(e) => setNamedOnly(e.target.checked)} className="accent-accent" />
+            named only ({namedCount} of {data.response_concepts.length} named)
+          </label>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -165,7 +179,7 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
             <Card>
               <div className="mb-2 flex items-start justify-between gap-2">
                 <h3 className="text-sm font-semibold text-slate-200">
-                  Prompts about “{pName.get(focusP)}” — response concepts that co-occur:
+                  Prompts about “{conceptLabel(focusP, pName.get(focusP))}” — response concepts that co-occur:
                 </h3>
                 <button onClick={() => setFocusP(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
               </div>
@@ -176,7 +190,7 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
             <Card>
               <div className="mb-2 flex items-start justify-between gap-2">
                 <h3 className="text-sm font-semibold text-slate-200">
-                  “{cName.get(focusC)}” — prompt concepts it co-occurs with:
+                  “{conceptLabel(focusC, cName.get(focusC))}” — prompt concepts it co-occurs with:
                 </h3>
                 <button onClick={() => setFocusC(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
               </div>
@@ -211,14 +225,14 @@ export default function Elicitation({ data }: { data: ElicitationData | null }) 
                 return (
                   <tr key={`${e.px}:${e.cy}`} className="border-b border-edge/40 hover:bg-edge/20">
                     <td className="py-1.5 pr-2">
-                      <button onClick={() => setFocusP(e.px)} className="max-w-[220px] truncate text-left text-slate-300 hover:text-accent" title={pName.get(e.px)}>
-                        {pName.get(e.px)}
+                      <button onClick={() => setFocusP(e.px)} className="block max-w-[220px] truncate text-left text-slate-300 hover:text-accent" title={conceptLabel(e.px, pName.get(e.px))}>
+                        {conceptLabel(e.px, pName.get(e.px))}
                       </button>
                     </td>
                     <td className="px-2 text-slate-600"><ArrowRight size={13} /></td>
                     <td className="py-1.5 pr-2">
-                      <button onClick={() => setFocusC(e.cy)} className="max-w-[220px] truncate text-left text-slate-300 hover:text-accent" title={cName.get(e.cy)}>
-                        {cName.get(e.cy)}
+                      <button onClick={() => setFocusC(e.cy)} className="block max-w-[220px] truncate text-left text-slate-300 hover:text-accent" title={conceptLabel(e.cy, cName.get(e.cy))}>
+                        {conceptLabel(e.cy, cName.get(e.cy))}
                       </button>
                     </td>
                     <td className={`py-1.5 pr-2 text-right font-mono ${pos ? "text-good" : "text-bad"}`}>

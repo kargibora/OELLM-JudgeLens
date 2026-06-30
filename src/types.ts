@@ -172,7 +172,7 @@ export interface DeltaCell {
   stable: boolean; // split-half sign stability
 }
 export interface DeltaData {
-  prompt_concepts: { id: number; name: string }[];
+  prompt_concepts: { id: number; name: string | null }[];
   completion_features: DeltaCol[];
   cells: DeltaCell[];
   n_cells: number;
@@ -214,8 +214,8 @@ export interface CondCell {
   n: number | null; // battles of this prompt type
 }
 export interface ConditionalData {
-  prompt_concepts: { id: number; name: string }[];
-  features: { id: number; concept: string }[];
+  prompt_concepts: { id: number; name: string | null }[];
+  features: { id: number; concept: string | null }[];
   cells: CondCell[];
   n_cells: number;
   n_significant: number;
@@ -235,8 +235,8 @@ export interface ElicEdge {
   sig: boolean;
 }
 export interface ElicitationData {
-  prompt_concepts: { id: number; concept: string }[];
-  response_concepts: { id: number; concept: string }[];
+  prompt_concepts: { id: number; concept: string | null }[];
+  response_concepts: { id: number; concept: string | null }[];
   edges: ElicEdge[];
   n_edges: number; // full tested-and-reported count
   n_significant: number; // significant among ALL tested
