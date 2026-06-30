@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Activity, AlertTriangle, ArrowRightLeft, BarChart3, ClipboardList, FlaskConical, Grid3x3,
+  AlertTriangle, ArrowRightLeft, BarChart3, ClipboardList, FlaskConical, Grid3x3,
   LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Table2,
 } from "lucide-react";
 import type { Bundle } from "./types";
@@ -9,7 +9,6 @@ import Overview from "./components/Overview";
 import FeaturesTable from "./components/FeaturesTable";
 import WinRelevance from "./components/WinRelevance";
 import Validation from "./components/Validation";
-import ModelDiagnosis from "./components/ModelDiagnosis";
 import FeatureDetail from "./components/FeatureDetail";
 import MapView from "./components/MapView";
 import ResponseMapView from "./components/ResponseMapView";
@@ -33,8 +32,7 @@ const TABS = [
   { id: "confound", label: "Confound screen", icon: AlertTriangle, groupStart: " " },
   { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
   { id: "validation", label: "Validation", icon: ScatterChart },
-  { id: "diagnosis", label: "Model diagnosis", icon: Activity },
-  { id: "report", label: "Report card", icon: ClipboardList },
+  { id: "report", label: "Model report", icon: ClipboardList },
   { id: "map", label: "Map", icon: Map },
   { id: "responsemap", label: "Feature map", icon: ScatterChart },
   { id: "promptmap", label: "Prompt map", icon: MessageSquare },
@@ -111,7 +109,6 @@ export default function App() {
       {tab === "confound" && <BiasScreen bias={bundle.bias} />}
       {tab === "prompts" && <PromptFeatures data={bundle.promptFeatures} />}
       {tab === "validation" && <Validation validation={bundle.validation} />}
-      {tab === "diagnosis" && <ModelDiagnosis diagnosis={bundle.diagnosis} features={bundle.features} />}
       {tab === "report" && (
         <ReportCard
           diagnosis={bundle.diagnosis}
