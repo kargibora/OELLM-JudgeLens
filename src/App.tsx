@@ -114,6 +114,7 @@ export default function App() {
           diagnosis={bundle.diagnosis}
           features={bundle.features}
           reportBattles={bundle.reportBattles}
+          examples={bundle.examples}
         />
       )}
       {tab === "maps" && (
