@@ -83,16 +83,28 @@ export function ConceptLabel({
   id,
   name,
   className = "",
+  wrap = false,
 }: {
   id: number;
   name: string | null | undefined;
   className?: string;
+  // `wrap`: render the FULL text, wrapping over multiple lines, with no truncation
+  // and no hover popover. Use in drill-in / detail views where there is room and the
+  // user explicitly wants to read the whole concept (the truncate+popover form is for
+  // dense tables where space is tight).
+  wrap?: boolean;
 }) {
   const unnamed = isUnnamed(name);
   const text = conceptLabel(id, name);
   const full = unnamed
     ? `feature ${id} — unnamed (annotate with \`prefscope interpret name\`)`
     : (name as string);
+  if (wrap)
+    return (
+      <span className={`break-words ${unnamed ? "italic text-slate-500" : ""} ${className}`}>
+        {text}
+      </span>
+    );
   return (
     <span
       tabIndex={0}
