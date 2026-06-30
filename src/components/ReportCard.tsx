@@ -11,8 +11,10 @@ import {
   YAxis,
 } from "recharts";
 import type { Diagnosis, Feature, ReportBattles } from "../types";
-import { Card, Explain, Metric, divergeColor, WINRATE_REF } from "./ui";
+import { Card, Explain, Metric, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
+
+type FireMode = "abs" | "pool" | "model";
 
 // One consolidated, visual per-model report: what this model does a lot / rarely,
 // the rewarded behaviours it under-expresses, the prompt types it's strong / weak
@@ -25,16 +27,51 @@ const clip = (s: string, n = 48) => (s.length > n ? s.slice(0, n - 1) + "…" : 
 type BarRow = { label: string; full: string; v: number; color: string; tip?: string };
 type Bound = number | string | ((n: number) => number);
 
-// y-axis tick that shows the (possibly truncated) label but carries the FULL text
-// in an SVG <title>, so long concept names are readable on hover.
+// greedy word-wrap into up to `maxLines` lines that fit `maxChars`; the last line is
+// ellipsized only if the text genuinely overflows. So most concept names render fully
+// on two lines with NO hover needed (recharts axis labels can't reflow HTML).
+function wrapLabel(text: string, maxChars: number, maxLines = 2): string[] {
+  const norm = (text || "").trim().replace(/\s+/g, " "); // collapse so spacing can't fake overflow
+  const words = norm.split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length <= maxChars || !cur) cur = next;
+    else {
+      lines.push(cur);
+      cur = w;
+      if (lines.length === maxLines) break;
+    }
+  }
+  if (lines.length < maxLines && cur) lines.push(cur);
+  if (lines.length) {
+    const overflow = lines.join(" ").length < norm.length; // unshown words remain
+    const last = lines[lines.length - 1];
+    if (overflow || last.length > maxChars) {
+      lines[lines.length - 1] =
+        (last.length > maxChars - 1 ? last.slice(0, maxChars - 1) : last).replace(/\s+$/, "") + "…";
+    }
+  }
+  return lines.slice(0, maxLines);
+}
+
+// y-axis tick: render the FULL label word-wrapped to two lines (most names fit), with
+// the complete text in an SVG <title> as a fallback for the rare 3-line name.
 const YTick = (props: any) => {
-  const { x, y, payload, fulls } = props;
-  const full = fulls?.[payload?.index] ?? payload?.value;
+  const { x, y, payload, fulls, width = 250 } = props;
+  const full = String(fulls?.[payload?.index] ?? payload?.value ?? "");
+  const maxChars = Math.max(8, Math.floor((width - 10) / 6));
+  const lines = wrapLabel(full, maxChars, 2);
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={-4} dy={4} textAnchor="end" fill="#94a3b8" fontSize={11}>
+      <text x={-4} y={0} textAnchor="end" fill="#94a3b8" fontSize={11}>
         <title>{full}</title>
-        {payload?.value}
+        {lines.map((ln, i) => (
+          <tspan key={i} x={-4} dy={i === 0 ? (lines.length === 2 ? -1 : 4) : 12}>
+            {ln}
+          </tspan>
+        ))}
       </text>
     </g>
   );
@@ -60,7 +97,7 @@ function BarPanel({
   if (data.length === 0)
     return <p className="px-1 py-6 text-center text-sm text-slate-500">(nothing to show)</p>;
   return (
-    <ResponsiveContainer width="100%" height={Math.max(120, data.length * 30 + (axis ? 32 : 16))}>
+    <ResponsiveContainer width="100%" height={Math.max(140, data.length * 40 + (axis ? 32 : 16))}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 52, top: 4, bottom: 4 }}>
         <XAxis type="number" domain={domain} hide={!axis} stroke="#64748b" fontSize={11}
           tickFormatter={fmtVal} />
@@ -70,7 +107,7 @@ function BarPanel({
           width={yWidth}
           tickLine={false}
           axisLine={false}
-          tick={<YTick fulls={data.map((d) => d.full)} />}
+          tick={<YTick fulls={data.map((d) => d.full)} width={yWidth} />}
         />
         <Tooltip
           cursor={{ fill: "rgba(148,163,184,0.08)" }}
@@ -173,6 +210,8 @@ export default function ReportCard({
 }) {
   const [model, setModel] = useState(diagnosis?.models?.[0] ?? "");
   const [openPrompt, setOpenPrompt] = useState<string | null>(null);
+  const [fireMode, setFireMode] = useState<FireMode>("abs");
+  const [compareModel, setCompareModel] = useState<string>("");
 
   const featureById = useMemo(() => {
     const m: Record<number, Feature> = {};
@@ -188,6 +227,7 @@ export default function ReportCard({
       const f = featureById[fid];
       return {
         fid,
+        idx: i, // position in diagnosis.features (for pool/compare lookups)
         concept: diagnosis.concepts[i] ?? "",
         fire: row.fire_rate?.[i],
         under: row.delta_vs_pool?.[i] ?? row.net_direction?.[i],
@@ -196,21 +236,58 @@ export default function ReportCard({
     });
   }, [diagnosis, row, featureById]);
 
+  // pool-average fire rate per feature (mean across all models that have fire_rate) —
+  // computed client-side; no export change. Lets us cancel out "fires for everyone".
+  const poolAvg = useMemo(() => {
+    if (!diagnosis) return [] as number[];
+    const F = diagnosis.features.length;
+    const sum = new Array(F).fill(0);
+    let n = 0;
+    for (const m of diagnosis.models) {
+      const fr = diagnosis.rows[m]?.fire_rate;
+      if (!fr) continue;
+      for (let i = 0; i < F; i++) sum[i] += fr[i] ?? 0;
+      n++;
+    }
+    return n ? sum.map((s) => s / n) : [];
+  }, [diagnosis]);
+
+  // resolve the 2nd model synchronously (never self-vs-self): the user's pick if valid,
+  // else the first other model — so there's no one-frame "More than —" flash.
+  const cmpModel =
+    fireMode === "model"
+      ? compareModel && compareModel !== model
+        ? compareModel
+        : diagnosis?.models.find((m) => m !== model) ?? null
+      : null;
+  const compareFire = cmpModel ? diagnosis?.rows[cmpModel]?.fire_rate : undefined;
+
   const named = useMemo(() => view.filter((v) => v.concept && v.concept.trim() !== ""), [view]);
   const hasFire = !!row?.fire_rate;
 
   const fired = useMemo(() => named.filter((v) => v.fire != null), [named]);
-  const doesALot = useMemo(
-    () => [...fired].sort((a, b) => (b.fire ?? 0) - (a.fire ?? 0)).slice(0, 12),
-    [fired]
+  // per-feature display value for the current fire mode: absolute fire, or signed
+  // difference vs the pool average / a comparison model (so shared features cancel out)
+  const fireRows = useMemo(
+    () =>
+      fired.map((v) => {
+        const base =
+          fireMode === "pool" ? poolAvg[v.idx] ?? 0
+          : fireMode === "model" ? compareFire?.[v.idx] ?? 0
+          : 0;
+        const val = fireMode === "abs" ? v.fire ?? 0 : (v.fire ?? 0) - base;
+        return { ...v, base, val };
+      }),
+    [fired, fireMode, poolAvg, compareFire]
   );
-  const doesRarely = useMemo(() => {
-    const lot = new Set(doesALot.map((v) => v.fid));
-    return [...fired]
-      .sort((a, b) => (a.fire ?? 0) - (b.fire ?? 0))
-      .filter((v) => !lot.has(v.fid))
-      .slice(0, 12);
-  }, [fired, doesALot]);
+  const moreFire = useMemo(
+    () => [...fireRows].sort((a, b) => b.val - a.val).slice(0, 12),
+    [fireRows]
+  );
+  const lessFire = useMemo(() => {
+    const more = new Set(moreFire.map((v) => v.fid));
+    return [...fireRows].sort((a, b) => a.val - b.val).filter((v) => !more.has(v.fid)).slice(0, 12);
+  }, [fireRows, moreFire]);
   const rewardedGaps = useMemo(
     () =>
       named
@@ -243,8 +320,30 @@ export default function ReportCard({
     [row]
   );
 
-  const fireBars = (rows: typeof doesALot): BarRow[] =>
-    rows.map((v) => ({ label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in" }));
+  const relMode = fireMode !== "abs";
+  const fireBars = (rows: typeof fireRows): BarRow[] =>
+    rows.map((v) =>
+      relMode
+        ? {
+            label: clip(v.concept),
+            full: v.concept,
+            v: v.val,
+            color: fireDivergeColor(v.val),
+            tip: `fires ${pct(v.fire, 0)} · baseline ${pct(v.base, 0)}`,
+          }
+        : { label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in" }
+    );
+  const ppFmt = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v * 100)}pp`;
+  const fireDomain: [number | string | ((n: number) => number), number | string | ((n: number) => number)] =
+    relMode ? [(min: number) => Math.min(0, min), (max: number) => Math.max(0, max)] : [0, 1];
+  const moreTitle =
+    fireMode === "abs" ? "Does a lot" : fireMode === "pool" ? "Distinctively frequent" : `More than ${cmpModel ?? "—"}`;
+  const lessTitle =
+    fireMode === "abs" ? "Does rarely" : fireMode === "pool" ? "Distinctively rare" : `Less than ${cmpModel ?? "—"}`;
+  const moreHint =
+    fireMode === "abs" ? "highest activation rate across this model's battles" : "fires more here than the baseline";
+  const lessHint =
+    fireMode === "abs" ? "lowest activation rate — behaviours it seldom shows" : "fires less here than the baseline";
   const gapBars: BarRow[] = rewardedGaps.map((v) => ({
     label: clip(v.concept),
     full: v.concept,
@@ -339,13 +438,53 @@ export default function ReportCard({
           )}
 
           {hasFire && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Section title="Does a lot" hint="highest activation rate across this model's battles">
-                <BarPanel data={fireBars(doesALot)} domain={[0, 1]} fmtVal={(v) => pct(v, 0)} />
-              </Section>
-              <Section title="Does rarely" hint="lowest activation rate — behaviours it seldom shows">
-                <BarPanel data={fireBars(doesRarely)} domain={[0, 1]} fmtVal={(v) => pct(v, 0)} />
-              </Section>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex rounded-lg border border-edge p-0.5">
+                  {(["abs", "pool", "model"] as FireMode[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setFireMode(m)}
+                      className={`rounded-md px-2.5 py-1 text-xs transition ${
+                        fireMode === m ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {m === "abs" ? "Absolute" : m === "pool" ? "vs average" : "vs model"}
+                    </button>
+                  ))}
+                </div>
+                {fireMode === "model" && (
+                  <select
+                    value={cmpModel ?? ""}
+                    onChange={(e) => setCompareModel(e.target.value)}
+                    className="rounded-lg border border-edge bg-ink px-2 py-1 text-xs"
+                  >
+                    {diagnosis.models
+                      .filter((m) => m !== model)
+                      .map((m) => (
+                        <option key={m} value={m}>
+                          {m} · {pct(diagnosis.rows[m]?.win_rate, 0)}
+                        </option>
+                      ))}
+                  </select>
+                )}
+                {relMode && (
+                  <span className="text-[11px] text-slate-500">
+                    <span style={{ color: "rgb(96,165,250)" }}>blue</span> = fires more than baseline ·{" "}
+                    <span style={{ color: "rgb(251,191,36)" }}>amber</span> = fires less
+                  </span>
+                )}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Section title={moreTitle} hint={moreHint}>
+                  <BarPanel data={fireBars(moreFire)} domain={fireDomain} fmtVal={relMode ? ppFmt : (v) => pct(v, 0)}
+                    zero={relMode} axis={relMode} labels={!relMode} />
+                </Section>
+                <Section title={lessTitle} hint={lessHint}>
+                  <BarPanel data={fireBars(lessFire)} domain={fireDomain} fmtVal={relMode ? ppFmt : (v) => pct(v, 0)}
+                    zero={relMode} axis={relMode} labels={!relMode} />
+                </Section>
+              </div>
             </div>
           )}
 

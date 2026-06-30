@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ConditionalData } from "../types";
-import { Card, Caveat, Explain, divergeColor, WINRATE_REF } from "./ui";
+import { Card, Caveat, Explain, conceptLabel, divergeColor, WINRATE_REF } from "./ui";
 
 /**
  * Conditional δ_{f,k}: the framework thesis as a statistic. For each behaviour f and
@@ -121,7 +121,7 @@ export default function ConditionalWinRelevance({ data }: { data: ConditionalDat
                 </th>
                 {pcs.map((p) => (
                   <th key={p.id} className="max-w-[120px] p-2 text-left align-bottom font-medium text-slate-400">
-                    <div className="truncate" title={p.name}>{p.name}</div>
+                    <div className="truncate" title={conceptLabel(p.id, p.name)}>{conceptLabel(p.id, p.name)}</div>
                   </th>
                 ))}
               </tr>
@@ -129,8 +129,8 @@ export default function ConditionalWinRelevance({ data }: { data: ConditionalDat
             <tbody>
               {rows.map(({ f }) => (
                 <tr key={f.id} className="hover:bg-edge/20">
-                  <td className="sticky left-0 z-10 max-w-[260px] truncate bg-panel/95 p-2 text-slate-300" title={f.concept}>
-                    {f.concept}
+                  <td className="sticky left-0 z-10 max-w-[260px] truncate bg-panel/95 p-2 text-slate-300" title={conceptLabel(f.id, f.concept)}>
+                    {conceptLabel(f.id, f.concept)}
                   </td>
                   {pcs.map((p) => {
                     const c = cellOf.get(`${p.id}:${f.id}`);
