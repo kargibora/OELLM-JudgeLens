@@ -21,14 +21,16 @@ import BiasScreen from "./components/BiasScreen";
 import PromptFeatures from "./components/PromptFeatures";
 import ReportCard from "./components/ReportCard";
 
+// `groupStart` renders a small section label before the tab — used to cluster the
+// three prompt↔response views (which are different statistics, not duplicates).
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "features", label: "Features", icon: Table2 },
   { id: "reward", label: "Win relevance", icon: BarChart3 },
-  { id: "conditional", label: "Conditional δ", icon: Split },
-  { id: "elicitation", label: "Prompt → Response", icon: ArrowRightLeft },
-  { id: "relationship", label: "Relationship Δ", icon: Grid3x3 },
-  { id: "confound", label: "Confound screen", icon: AlertTriangle },
+  { id: "elicitation", label: "Elicits", icon: ArrowRightLeft, groupStart: "Prompt ↔ Response" },
+  { id: "conditional", label: "Wins within prompt type", icon: Split },
+  { id: "relationship", label: "Winner contrast", icon: Grid3x3 },
+  { id: "confound", label: "Confound screen", icon: AlertTriangle, groupStart: " " },
   { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
   { id: "validation", label: "Validation", icon: ScatterChart },
   { id: "diagnosis", label: "Model diagnosis", icon: Activity },
@@ -71,21 +73,31 @@ export default function App() {
         </span>
       </header>
 
-      <nav className="mb-6 flex flex-wrap gap-1 rounded-2xl border border-edge bg-panel/60 p-1">
+      <nav className="mb-6 flex flex-wrap items-center gap-1 rounded-2xl border border-edge bg-panel/60 p-1">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
+          const groupStart = "groupStart" in t ? (t as { groupStart?: string }).groupStart : undefined;
           return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
-                active ? "bg-accent text-white" : "text-slate-400 hover:bg-edge/50 hover:text-slate-200"
-              }`}
-            >
-              <Icon size={16} />
-              {t.label}
-            </button>
+            <span key={t.id} className="flex items-center gap-1">
+              {groupStart !== undefined &&
+                (groupStart.trim() ? (
+                  <span className="ml-2 mr-0.5 select-none text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    {groupStart}
+                  </span>
+                ) : (
+                  <span className="mx-1 h-5 w-px bg-edge" />
+                ))}
+              <button
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
+                  active ? "bg-accent text-white" : "text-slate-400 hover:bg-edge/50 hover:text-slate-200"
+                }`}
+              >
+                <Icon size={16} />
+                {t.label}
+              </button>
+            </span>
           );
         })}
       </nav>
@@ -100,7 +112,13 @@ export default function App() {
       {tab === "prompts" && <PromptFeatures data={bundle.promptFeatures} />}
       {tab === "validation" && <Validation validation={bundle.validation} />}
       {tab === "diagnosis" && <ModelDiagnosis diagnosis={bundle.diagnosis} features={bundle.features} />}
-      {tab === "report" && <ReportCard diagnosis={bundle.diagnosis} features={bundle.features} />}
+      {tab === "report" && (
+        <ReportCard
+          diagnosis={bundle.diagnosis}
+          features={bundle.features}
+          reportBattles={bundle.reportBattles}
+        />
+      )}
       {tab === "map" && <MapView map={bundle.map} />}
       {tab === "responsemap" && <ResponseMapView map={bundle.responseMap} />}
       {tab === "promptmap" && (
