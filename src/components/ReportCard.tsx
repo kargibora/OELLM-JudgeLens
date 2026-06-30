@@ -14,7 +14,7 @@ import type { Diagnosis, Feature, ReportBattles } from "../types";
 import { Card, Explain, Metric, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
 
-type FireMode = "abs" | "pool" | "model";
+type FireMode = "freq" | "paired" | "model";
 
 // One consolidated, visual per-model report: what this model does a lot / rarely,
 // the rewarded behaviours it under-expresses, the prompt types it's strong / weak
@@ -210,7 +210,7 @@ export default function ReportCard({
 }) {
   const [model, setModel] = useState(diagnosis?.models?.[0] ?? "");
   const [openPrompt, setOpenPrompt] = useState<string | null>(null);
-  const [fireMode, setFireMode] = useState<FireMode>("abs");
+  const [fireMode, setFireMode] = useState<FireMode>("freq");
   const [compareModel, setCompareModel] = useState<string>("");
 
   const featureById = useMemo(() => {
@@ -236,22 +236,6 @@ export default function ReportCard({
     });
   }, [diagnosis, row, featureById]);
 
-  // pool-average fire rate per feature (mean across all models that have fire_rate) —
-  // computed client-side; no export change. Lets us cancel out "fires for everyone".
-  const poolAvg = useMemo(() => {
-    if (!diagnosis) return [] as number[];
-    const F = diagnosis.features.length;
-    const sum = new Array(F).fill(0);
-    let n = 0;
-    for (const m of diagnosis.models) {
-      const fr = diagnosis.rows[m]?.fire_rate;
-      if (!fr) continue;
-      for (let i = 0; i < F; i++) sum[i] += fr[i] ?? 0;
-      n++;
-    }
-    return n ? sum.map((s) => s / n) : [];
-  }, [diagnosis]);
-
   // resolve the 2nd model synchronously (never self-vs-self): the user's pick if valid,
   // else the first other model — so there's no one-frame "More than —" flash.
   const cmpModel =
@@ -266,19 +250,28 @@ export default function ReportCard({
   const hasFire = !!row?.fire_rate;
 
   const fired = useMemo(() => named.filter((v) => v.fire != null), [named]);
-  // per-feature display value for the current fire mode: absolute fire, or signed
-  // difference vs the pool average / a comparison model (so shared features cancel out)
+  // per-feature display value for the current fire mode:
+  //  freq   = absolute fire rate (frequency; NOT prompt-controlled)
+  //  paired = delta_vs_pool — expresses more/less than other models comparing answers
+  //           to the SAME prompt (prompt-controlled; shared behaviours cancel to ~0)
+  //  model  = fire-rate difference vs a chosen model (frequency; not prompt-controlled)
   const fireRows = useMemo(
     () =>
       fired.map((v) => {
-        const base =
-          fireMode === "pool" ? poolAvg[v.idx] ?? 0
-          : fireMode === "model" ? compareFire?.[v.idx] ?? 0
-          : 0;
-        const val = fireMode === "abs" ? v.fire ?? 0 : (v.fire ?? 0) - base;
+        const base = fireMode === "model" ? compareFire?.[v.idx] ?? 0 : 0;
+        const val =
+          fireMode === "freq" ? v.fire ?? 0
+          : fireMode === "paired" ? v.under ?? 0
+          : (v.fire ?? 0) - base;
         return { ...v, base, val };
       }),
-    [fired, fireMode, poolAvg, compareFire]
+    [fired, fireMode, compareFire]
+  );
+  // intensity reference for the paired (delta_vs_pool) palette — scaled to the data,
+  // since delta_vs_pool is in oriented-code units, not percentage points
+  const pairedRef = useMemo(
+    () => Math.max(0.01, ...fireRows.map((v) => Math.abs(v.under ?? 0))),
+    [fireRows]
   );
   const moreFire = useMemo(
     () => [...fireRows].sort((a, b) => b.val - a.val).slice(0, 12),
@@ -320,30 +313,50 @@ export default function ReportCard({
     [row]
   );
 
-  const relMode = fireMode !== "abs";
+  const relMode = fireMode !== "freq";
   const fireBars = (rows: typeof fireRows): BarRow[] =>
-    rows.map((v) =>
-      relMode
-        ? {
-            label: clip(v.concept),
-            full: v.concept,
-            v: v.val,
-            color: fireDivergeColor(v.val),
-            tip: `fires ${pct(v.fire, 0)} · baseline ${pct(v.base, 0)}`,
-          }
-        : { label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in" }
-    );
+    rows.map((v) => {
+      if (fireMode === "freq")
+        return { label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in" };
+      if (fireMode === "paired")
+        return {
+          label: clip(v.concept),
+          full: v.concept,
+          v: v.val,
+          color: fireDivergeColor(v.val, pairedRef),
+          tip: `Δ vs other models, same prompt · fires ${pct(v.fire, 0)}`,
+        };
+      return {
+        label: clip(v.concept),
+        full: v.concept,
+        v: v.val,
+        color: fireDivergeColor(v.val),
+        tip: `fires ${pct(v.fire, 0)} · ${cmpModel} ${pct(v.base, 0)}`,
+      };
+    });
   const ppFmt = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v * 100)}pp`;
+  const fireFmt =
+    fireMode === "freq" ? (v: number) => pct(v, 0)
+    : fireMode === "model" ? ppFmt
+    : (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`; // paired: delta_vs_pool units
   const fireDomain: [number | string | ((n: number) => number), number | string | ((n: number) => number)] =
     relMode ? [(min: number) => Math.min(0, min), (max: number) => Math.max(0, max)] : [0, 1];
   const moreTitle =
-    fireMode === "abs" ? "Does a lot" : fireMode === "pool" ? "Distinctively frequent" : `More than ${cmpModel ?? "—"}`;
+    fireMode === "freq" ? "Does a lot"
+    : fireMode === "paired" ? "Expresses more (vs other models)"
+    : `More than ${cmpModel ?? "—"}`;
   const lessTitle =
-    fireMode === "abs" ? "Does rarely" : fireMode === "pool" ? "Distinctively rare" : `Less than ${cmpModel ?? "—"}`;
+    fireMode === "freq" ? "Does rarely"
+    : fireMode === "paired" ? "Expresses less (vs other models)"
+    : `Less than ${cmpModel ?? "—"}`;
   const moreHint =
-    fireMode === "abs" ? "highest activation rate across this model's battles" : "fires more here than the baseline";
+    fireMode === "freq" ? "highest activation rate across this model's battles"
+    : fireMode === "paired" ? "expresses more than other models do, comparing answers to the same prompt"
+    : "fires more often (frequency — not prompt-controlled)";
   const lessHint =
-    fireMode === "abs" ? "lowest activation rate — behaviours it seldom shows" : "fires less here than the baseline";
+    fireMode === "freq" ? "lowest activation rate — behaviours it seldom shows"
+    : fireMode === "paired" ? "expresses less than other models do, on the same prompt"
+    : "fires less often (frequency — not prompt-controlled)";
   const gapBars: BarRow[] = rewardedGaps.map((v) => ({
     label: clip(v.concept),
     full: v.concept,
@@ -441,15 +454,20 @@ export default function ReportCard({
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="inline-flex rounded-lg border border-edge p-0.5">
-                  {(["abs", "pool", "model"] as FireMode[]).map((m) => (
+                  {(["freq", "paired", "model"] as FireMode[]).map((m) => (
                     <button
                       key={m}
                       onClick={() => setFireMode(m)}
+                      title={
+                        m === "freq" ? "how often each behaviour appears in this model's answers"
+                        : m === "paired" ? "expresses more/less than other models, comparing answers to the SAME prompt (prompt-controlled)"
+                        : "fire-rate difference vs a chosen model (frequency — affected by which prompts each model saw)"
+                      }
                       className={`rounded-md px-2.5 py-1 text-xs transition ${
                         fireMode === m ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
                       }`}
                     >
-                      {m === "abs" ? "Absolute" : m === "pool" ? "vs average" : "vs model"}
+                      {m === "freq" ? "Frequency" : m === "paired" ? "Distinctive (same prompt)" : "vs model"}
                     </button>
                   ))}
                 </div>
@@ -470,18 +488,21 @@ export default function ReportCard({
                 )}
                 {relMode && (
                   <span className="text-[11px] text-slate-500">
-                    <span style={{ color: "rgb(96,165,250)" }}>blue</span> = fires more than baseline ·{" "}
-                    <span style={{ color: "rgb(251,191,36)" }}>amber</span> = fires less
+                    <span style={{ color: "rgb(96,165,250)" }}>blue</span> = more ·{" "}
+                    <span style={{ color: "rgb(251,191,36)" }}>amber</span> = less
+                    {fireMode === "paired"
+                      ? " · prompt-controlled (same-prompt contrast)"
+                      : " · frequency, not prompt-controlled"}
                   </span>
                 )}
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
                 <Section title={moreTitle} hint={moreHint}>
-                  <BarPanel data={fireBars(moreFire)} domain={fireDomain} fmtVal={relMode ? ppFmt : (v) => pct(v, 0)}
+                  <BarPanel data={fireBars(moreFire)} domain={fireDomain} fmtVal={fireFmt}
                     zero={relMode} axis={relMode} labels={!relMode} />
                 </Section>
                 <Section title={lessTitle} hint={lessHint}>
-                  <BarPanel data={fireBars(lessFire)} domain={fireDomain} fmtVal={relMode ? ppFmt : (v) => pct(v, 0)}
+                  <BarPanel data={fireBars(lessFire)} domain={fireDomain} fmtVal={fireFmt}
                     zero={relMode} axis={relMode} labels={!relMode} />
                 </Section>
               </div>
