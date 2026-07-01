@@ -64,7 +64,7 @@ export default function ConditionalWinRelevance({
   }, [focus, metric, groupByCluster, namedPromptsOnly, sigOnly]);
 
   const genMap = useMemo(() => {
-    const m = new Map<number, { generality?: number; n_prompt_types?: number }>();
+    const m = new Map<number, { generality?: number | null; n_prompt_types?: number }>();
     features.forEach((f) => m.set(f.feature_id, { generality: f.generality, n_prompt_types: f.n_prompt_types }));
     return m;
   }, [features]);

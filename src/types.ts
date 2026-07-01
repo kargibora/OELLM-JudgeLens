@@ -38,8 +38,9 @@ export interface Feature {
   behavior?: string;
   // prompt-generality: how broadly this response feature fires across prompt concepts
   // (0 = content-bound, 1 = fires across all). From the elicitation co-occurrence counts.
-  generality?: number;
-  n_prompt_types?: number; // # prompt concepts that significantly elicit it
+  generality?: number | null; // null = below support floor (unknown), NOT content-bound
+  n_prompt_types?: number; // # prompt concepts that significantly elicit it (~inverse of generality)
+  gen_support?: number; // total prompt co-occurrence mass behind `generality`
 }
 
 export interface ModelValidation {
@@ -269,6 +270,25 @@ export interface ReportBattle {
 // { model: { promptConceptName: ReportBattle[] } }
 export type ReportBattles = Record<string, Record<string, ReportBattle[]>>;
 
+// --- head-to-head: paired prompt-matched feature contrast between model pairs ---
+// bpos[k] = # shared battles where feature k fires in model `a`'s answer but NOT `b`'s;
+// cpos[k] = the reverse. a<b index into `models`. The viewer forms the paired estimate
+// (bpos-cpos)/n and a McNemar test from (bpos,cpos); bpos+cpos is the effective sample.
+export interface H2HPair {
+  a: number;
+  b: number;
+  n: number; // shared battles
+  bpos: number[]; // per-feature: a fires, b doesn't
+  cpos: number[]; // per-feature: b fires, a doesn't
+}
+export interface HeadToHead {
+  models: string[];
+  features: number[]; // feature ids parallel to bpos/cpos
+  concepts: (string | null)[];
+  min_shared: number;
+  pairs: H2HPair[];
+}
+
 export interface Bundle {
   meta: Meta;
   features: Feature[];
@@ -281,4 +301,5 @@ export interface Bundle {
   conditional: ConditionalBundle | null;
   elicitation: ElicitationData | null;
   reportBattles: ReportBattles | null;
+  headToHead: HeadToHead | null;
 }

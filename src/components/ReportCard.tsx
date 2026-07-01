@@ -10,9 +10,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Diagnosis, Examples, Feature, ReportBattles } from "../types";
+import type { Diagnosis, Examples, Feature, HeadToHead, ReportBattles } from "../types";
 import { Card, Explain, Metric, conceptLabel, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
+import { H2HIndex, type H2HCell } from "../h2h";
 import GapQuadrant, { type QuadrantPoint } from "./GapQuadrant";
 
 type FireMode = "freq" | "paired" | "model";
@@ -213,16 +214,20 @@ export default function ReportCard({
   features,
   reportBattles,
   examples,
+  headToHead,
 }: {
   diagnosis: Diagnosis | null;
   features: Feature[];
   reportBattles: ReportBattles | null;
   examples: Examples | null;
+  headToHead: HeadToHead | null;
 }) {
   const [model, setModel] = useState(diagnosis?.models?.[0] ?? "");
   const [openPrompt, setOpenPrompt] = useState<string | null>(null);
   const [fireMode, setFireMode] = useState<FireMode>("freq");
   const [compareModel, setCompareModel] = useState<string>("");
+  // "vs model" mode: show non-significant head-to-head cells too (default: hide them)
+  const [h2hShowAll, setH2hShowAll] = useState(false);
   const [query, setQuery] = useState("");
   const [showQuadrant, setShowQuadrant] = useState(false);
   // a clicked feature bar opens example answers for that feature; `src` keeps the drill-in
@@ -264,15 +269,32 @@ export default function ReportCard({
     });
   }, [diagnosis, row, featureById]);
 
+  // head-to-head index (paired, prompt-matched contrast between model pairs). Absent in
+  // pre-refresh bundles — the "vs model" mode then falls back to a pooled fire-rate diff.
+  const h2hIndex = useMemo(() => (headToHead ? new H2HIndex(headToHead) : null), [headToHead]);
+
   // resolve the 2nd model synchronously (never self-vs-self): the user's pick if valid,
-  // else the first other model — so there's no one-frame "More than —" flash.
+  // else — when head-to-head data exists — the first opponent that shares a stored pair,
+  // else the first other model. Avoids a one-frame "More than —" flash / empty pair.
   const cmpModel =
     fireMode === "model"
       ? compareModel && compareModel !== model
         ? compareModel
-        : diagnosis?.models.find((m) => m !== model) ?? null
+        : h2hIndex?.opponentsFor(model)[0] ??
+          diagnosis?.models.find((m) => m !== model) ??
+          null
       : null;
   const compareFire = cmpModel ? diagnosis?.rows[cmpModel]?.fire_rate : undefined;
+
+  // paired head-to-head cells for (model vs cmpModel), oriented so positive = model does
+  // it more, with McNemar p + BH q. null when no stored pair (too few shared battles or
+  // no head_to_head.json) → the render falls back to the pooled frequency diff.
+  const h2hCells = useMemo(() => {
+    if (fireMode !== "model" || !h2hIndex || !cmpModel) return null;
+    if (!h2hIndex.hasModel(model) || !h2hIndex.hasModel(cmpModel)) return null;
+    const cells = h2hIndex.cellsForPair(model, cmpModel);
+    return cells.length ? cells : null;
+  }, [fireMode, h2hIndex, model, cmpModel]);
 
   const named = useMemo(() => view.filter((v) => v.concept && v.concept.trim() !== ""), [view]);
   const hasFire = !!row?.fire_rate;
@@ -333,6 +355,38 @@ export default function ReportCard({
         .slice(0, 12),
     [named]
   );
+
+  // named head-to-head rows (X vs cmpModel), reward sign folded in for the outcome overlay
+  const h2hNamed = useMemo(() => {
+    if (!h2hCells) return [];
+    return h2hCells
+      .map((c) => {
+        const f = featureById[c.fid];
+        return { ...c, concept: f?.concept ?? "", reward: f?.delta_win_rate ?? f?.win_assoc };
+      })
+      .filter((r) => r.concept && r.concept.trim() !== "");
+  }, [h2hCells, featureById]);
+  const usingH2H = fireMode === "model" && h2hNamed.length > 0;
+  const h2hN = h2hNamed[0]?.n ?? 0;
+  const h2hVisible = useMemo(
+    () => (h2hShowAll ? h2hNamed : h2hNamed.filter((r) => (r.q ?? 1) < 0.05)),
+    [h2hNamed, h2hShowAll]
+  );
+  const h2hHidden = h2hNamed.length - h2hVisible.length;
+  const h2hRef = useMemo(
+    () => Math.max(0.02, ...h2hVisible.map((r) => Math.abs(r.diff))),
+    [h2hVisible]
+  );
+  const h2hMore = useMemo(
+    () => [...h2hVisible].sort((a, b) => b.diff - a.diff).slice(0, 12),
+    [h2hVisible]
+  );
+  const h2hLess = useMemo(() => {
+    const more = new Set(h2hMore.map((r) => r.fid));
+    return [...h2hVisible].sort((a, b) => a.diff - b.diff).filter((r) => !more.has(r.fid)).slice(0, 12);
+  }, [h2hVisible, h2hMore]);
+  // h2h-in-use but the selected pair isn't stored (below the shared-battle floor)
+  const h2hPairMissing = fireMode === "model" && !!h2hIndex && !!cmpModel && !h2hCells;
 
   const wr = row?.win_rate ?? 0.5;
   const promptTypes = row?.prompt_types ?? [];
@@ -397,19 +451,23 @@ export default function ReportCard({
   const moreTitle =
     fireMode === "freq" ? "Does a lot"
     : fireMode === "paired" ? "Expresses more (vs other models)"
-    : `More than ${cmpModel ?? "—"}`;
+    : usingH2H ? `Does more than ${cmpModel} · same ${h2hN} battles`
+    : `More than ${cmpModel ?? "—"} (pooled)`;
   const lessTitle =
     fireMode === "freq" ? "Does rarely"
     : fireMode === "paired" ? "Expresses less (vs other models)"
-    : `Less than ${cmpModel ?? "—"}`;
+    : usingH2H ? `Does less than ${cmpModel} · same ${h2hN} battles`
+    : `Less than ${cmpModel ?? "—"} (pooled)`;
   const moreHint =
     fireMode === "freq" ? "highest activation rate across this model's battles"
     : fireMode === "paired" ? "expresses more than other models do, comparing answers to the same prompt"
-    : "fires more often (frequency — not prompt-controlled)";
+    : usingH2H ? "prompt-matched: on the battles they fought each other, this model's answer shows this more (McNemar-significant)"
+    : "fires more often across each model's own battles (pooled — different prompt mixes, not shared-battle)";
   const lessHint =
     fireMode === "freq" ? "lowest activation rate — behaviours it seldom shows"
     : fireMode === "paired" ? "expresses less than other models do, on the same prompt"
-    : "fires less often (frequency — not prompt-controlled)";
+    : usingH2H ? "prompt-matched: this model's answer shows this less than the opponent's, on their shared battles"
+    : "fires less often across each model's own battles (pooled — not shared-battle)";
   const gapBars: BarRow[] = rewardedGaps.map((v) => ({
     label: clip(v.concept),
     full: v.concept,
@@ -422,6 +480,20 @@ export default function ReportCard({
     const full = `${r.prompt_concept} ⇒ ${r.response_concept}`;
     return { label: clip(full, 56), full, v: r.delta_win, color: divergeColor(r.delta_win, WINRATE_REF), tip: `Δwin · n=${r.n}` };
   });
+  // paired head-to-head bars: v = (X fires − Y fires) rate on the shared battles; the tip
+  // reports the discordant split + effective sample + BH q, plus a win-relevance arrow so
+  // behaviour and outcome stay visually separate (more ≠ better).
+  const h2hBars = (rows: typeof h2hVisible): BarRow[] =>
+    rows.map((r) => ({
+      label: clip(r.concept),
+      full: r.concept,
+      v: r.diff,
+      color: fireDivergeColor(r.diff, h2hRef),
+      tip:
+        `${model} ${r.bx} vs ${cmpModel} ${r.cx} discordant of ${r.n} · n_disc=${r.nDisc} · q=${(r.q ?? 1).toFixed(3)}` +
+        ((r.reward ?? 0) > 0 ? " · ↑win" : (r.reward ?? 0) < 0 ? " · ↓win" : ""),
+      fid: r.fid,
+    }));
 
   const battlesFor = (concept: string) => reportBattles?.[model]?.[concept] ?? [];
 
@@ -526,7 +598,7 @@ export default function ReportCard({
                       title={
                         m === "freq" ? "how often each behaviour appears in this model's answers"
                         : m === "paired" ? "expresses more/less than other models, comparing answers to the SAME prompt (prompt-controlled)"
-                        : "fire-rate difference vs a chosen model (frequency — affected by which prompts each model saw)"
+                        : "head-to-head vs a chosen model on the battles they fought each other (prompt-matched, McNemar-tested); falls back to a pooled fire-rate diff when no shared-battle data"
                       }
                       className={`rounded-md px-2.5 py-1 text-xs transition ${
                         fireMode === m ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
@@ -551,24 +623,45 @@ export default function ReportCard({
                       ))}
                   </select>
                 )}
+                {usingH2H && (
+                  <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <input type="checkbox" checked={h2hShowAll}
+                      onChange={(e) => setH2hShowAll(e.target.checked)} className="accent-accent" />
+                    show non-significant{h2hHidden > 0 ? ` (${h2hHidden} hidden)` : ""}
+                  </label>
+                )}
                 {relMode && (
                   <span className="text-[11px] text-slate-500">
                     <span style={{ color: "rgb(96,165,250)" }}>blue</span> = more ·{" "}
                     <span style={{ color: "rgb(251,191,36)" }}>amber</span> = less
                     {fireMode === "paired"
                       ? " · prompt-controlled (same-prompt contrast)"
-                      : " · frequency, not prompt-controlled"}
+                      : usingH2H
+                        ? " · prompt-matched · McNemar, BH-FDR q<0.05"
+                        : " · pooled frequency, not shared-battle"}
                   </span>
                 )}
               </div>
+              {h2hPairMissing && h2hIndex && (
+                <p className="text-[11px] text-amber-400/80">
+                  Too few shared battles between {model} and {cmpModel} (min {h2hIndex.minShared}) —
+                  showing the pooled fire-rate difference instead, which mixes different prompts.
+                </p>
+              )}
+              {fireMode === "model" && !h2hIndex && (
+                <p className="text-[11px] text-slate-500">
+                  Pooled fire-rate difference (mixes each model's own prompt distribution). Re-export
+                  with <code>--head-to-head</code> for a prompt-matched, significance-tested contrast.
+                </p>
+              )}
               <div className="grid gap-4 lg:grid-cols-2">
                 <Section title={moreTitle} hint={`${moreHint} · click a bar to see example answers`}>
-                  <BarPanel data={fireBars(moreFire)} domain={fireDomain} fmtVal={fireFmt}
+                  <BarPanel data={usingH2H ? h2hBars(h2hMore) : fireBars(moreFire)} domain={fireDomain} fmtVal={fireFmt}
                     zero={relMode} axis={relMode} labels={!relMode}
                     onBarClick={(r) => r.fid != null && setOpenFeat({ fid: r.fid, src: "fire" })} />
                 </Section>
                 <Section title={lessTitle} hint={`${lessHint} · click a bar to see example answers`}>
-                  <BarPanel data={fireBars(lessFire)} domain={fireDomain} fmtVal={fireFmt}
+                  <BarPanel data={usingH2H ? h2hBars(h2hLess) : fireBars(lessFire)} domain={fireDomain} fmtVal={fireFmt}
                     zero={relMode} axis={relMode} labels={!relMode}
                     onBarClick={(r) => r.fid != null && setOpenFeat({ fid: r.fid, src: "fire" })} />
                 </Section>
