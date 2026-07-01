@@ -1,40 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRightLeft, BarChart3, Boxes, ClipboardList, FlaskConical,
-  LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Sparkles, Table2,
+  AlertTriangle, Boxes, ClipboardList, LayoutDashboard, Map, ScatterChart, Split,
 } from "lucide-react";
 import type { Bundle } from "./types";
 import { loadBundle } from "./data";
 import Overview from "./components/Overview";
-import FeaturesTable from "./components/FeaturesTable";
-import WinRelevance from "./components/WinRelevance";
 import Validation from "./components/Validation";
-import FeatureDetail from "./components/FeatureDetail";
 import MapsTab from "./components/MapsTab";
-import Elicitation from "./components/Elicitation";
 import PromptBrowser from "./components/PromptBrowser";
 import FeaturePanel from "./components/FeaturePanel";
 import BiasScreen from "./components/BiasScreen";
-import PromptFeatures from "./components/PromptFeatures";
 import ReportCard from "./components/ReportCard";
-import GeneralBehaviours from "./components/GeneralBehaviours";
 
-// `groupStart` renders a small section label before the tab — used to cluster the
-// three prompt↔response views (which are different statistics, not duplicates).
+// `groupStart` renders a divider before the tab. Two browse hubs (Prompt/Feature) →
+// per-model + trust views → geometry.
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "features", label: "Features", icon: Table2 },
+  { id: "prompts-outcome", label: "Prompt panel", icon: Split, groupStart: " " },
   { id: "feature-panel", label: "Feature panel", icon: Boxes },
-  { id: "reward", label: "Win relevance", icon: BarChart3 },
-  { id: "elicitation", label: "Elicits", icon: ArrowRightLeft, groupStart: "Prompt ↔ Response" },
-  { id: "general", label: "General behaviours", icon: Sparkles },
-  { id: "prompts-outcome", label: "Prompt browser", icon: Split },
-  { id: "confound", label: "Confound screen", icon: AlertTriangle, groupStart: " " },
-  { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
+  { id: "report", label: "Model report", icon: ClipboardList, groupStart: " " },
+  { id: "confound", label: "Bias screen", icon: AlertTriangle },
   { id: "validation", label: "Validation", icon: ScatterChart },
-  { id: "report", label: "Model report", icon: ClipboardList },
-  { id: "maps", label: "Maps", icon: Map },
-  { id: "detail", label: "Feature detail", icon: FlaskConical },
+  { id: "maps", label: "Maps", icon: Map, groupStart: " " },
 ] as const;
 
 export default function App() {
@@ -106,8 +93,15 @@ export default function App() {
       </nav>
 
       {tab === "overview" && <Overview bundle={bundle} />}
-      {tab === "features" && <FeaturesTable features={bundle.features} />}
-      {tab === "reward" && <WinRelevance features={bundle.features} />}
+      {tab === "prompts-outcome" && (
+        <PromptBrowser
+          conditional={bundle.conditional}
+          elicitation={bundle.elicitation}
+          reportBattles={bundle.reportBattles}
+          focus={promptFocus}
+          onJumpFeature={(cf) => { setFocusCell({ pc: -1, cf }); setTab("feature-panel"); }}
+        />
+      )}
       {tab === "feature-panel" && (
         <FeaturePanel
           features={bundle.features}
@@ -118,25 +112,6 @@ export default function App() {
           onJumpPrompt={(pc) => { setFocusCell({ pc, cf: -1 }); setTab("prompts-outcome"); }}
         />
       )}
-      {tab === "prompts-outcome" && (
-        <PromptBrowser
-          conditional={bundle.conditional}
-          elicitation={bundle.elicitation}
-          reportBattles={bundle.reportBattles}
-          focus={promptFocus}
-        />
-      )}
-      {tab === "elicitation" && <Elicitation data={bundle.elicitation} />}
-      {tab === "general" && (
-        <GeneralBehaviours
-          features={bundle.features}
-          elicitation={bundle.elicitation}
-          examples={bundle.examples}
-        />
-      )}
-      {tab === "confound" && <BiasScreen bias={bundle.bias} />}
-      {tab === "prompts" && <PromptFeatures data={bundle.promptFeatures} />}
-      {tab === "validation" && <Validation validation={bundle.validation} />}
       {tab === "report" && (
         <ReportCard
           diagnosis={bundle.diagnosis}
@@ -146,10 +121,11 @@ export default function App() {
           headToHead={bundle.headToHead}
         />
       )}
+      {tab === "confound" && <BiasScreen bias={bundle.bias} />}
+      {tab === "validation" && <Validation validation={bundle.validation} />}
       {tab === "maps" && (
         <MapsTab onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("prompts-outcome"); }} />
       )}
-      {tab === "detail" && <FeatureDetail features={bundle.features} examples={bundle.examples} />}
     </div>
   );
 }

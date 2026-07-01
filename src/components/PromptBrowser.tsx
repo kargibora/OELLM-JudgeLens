@@ -18,11 +18,13 @@ export default function PromptBrowser({
   elicitation,
   reportBattles,
   focus,
+  onJumpFeature,
 }: {
   conditional: ConditionalBundle | null;
   elicitation: ElicitationData | null;
   reportBattles: ReportBattles | null;
   focus?: { pc: number } | null;
+  onJumpFeature?: (cf: number) => void;
 }) {
   const cond = conditional?.raw ?? null; // raw = individual prompt concepts (not clusters)
   const [query, setQuery] = useState("");
@@ -139,8 +141,8 @@ export default function PromptBrowser({
                 what this prompt tends to produce, and what wins it
               </p>
             </Card>
-            <ElicitsPanel elicitation={elicitation} pc={sel} />
-            <WinsPanel cond={cond} pc={sel} />
+            <ElicitsPanel elicitation={elicitation} pc={sel} onJumpFeature={onJumpFeature} />
+            <WinsPanel cond={cond} pc={sel} onJumpFeature={onJumpFeature} />
             {/* report_battles keys concepts by their raw name (bare id string when unnamed),
                 NOT the "feature N" display label — match that, else examples never join. */}
             <ExamplesPanel reportBattles={reportBattles} conceptName={selName ?? String(sel)} />
@@ -151,12 +153,13 @@ export default function PromptBrowser({
   );
 }
 
-// horizontal bar row (simple, readable — no chart lib)
-function Bar({ label, id, value, fmt, width, color }: {
-  label: string | null; id: number; value: string; fmt?: string; width: number; color: string;
+// horizontal bar row (simple, readable — no chart lib); clickable when onClick given
+function Bar({ label, id, value, fmt, width, color, onClick }: {
+  label: string | null; id: number; value: string; fmt?: string; width: number; color: string; onClick?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 py-0.5 text-xs">
+    <button onClick={onClick} disabled={!onClick}
+      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs ${onClick ? "rounded hover:bg-edge/30" : "cursor-default"}`}>
       <span className="min-w-0 flex-1">
         <ConceptLabel id={id} name={label} wrap className="text-slate-300" />
       </span>
@@ -164,11 +167,11 @@ function Bar({ label, id, value, fmt, width, color }: {
         <span className="block h-full rounded-full" style={{ width: `${Math.round(width * 100)}%`, background: color }} />
       </span>
       <span className="w-16 shrink-0 text-right tabular-nums text-slate-300" title={fmt}>{value}</span>
-    </div>
+    </button>
   );
 }
 
-function ElicitsPanel({ elicitation, pc }: { elicitation: ElicitationData | null; pc: number }) {
+function ElicitsPanel({ elicitation, pc, onJumpFeature }: { elicitation: ElicitationData | null; pc: number; onJumpFeature?: (cf: number) => void }) {
   const rows = useMemo(() => {
     if (!elicitation) return [];
     const nameOf = new Map(elicitation.response_concepts.map((c) => [c.id, c.concept]));
@@ -189,14 +192,15 @@ function ElicitsPanel({ elicitation, pc }: { elicitation: ElicitationData | null
         rows.map((r) => (
           <Bar key={r.id} id={r.id} label={r.name}
             value={`×${r.lift.toFixed(1)}`} fmt={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
-            width={r.w} color="rgba(96,165,250,0.85)" />
+            width={r.w} color="rgba(96,165,250,0.85)"
+            onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
         ))
       )}
     </Card>
   );
 }
 
-function WinsPanel({ cond, pc }: { cond: ConditionalData | null; pc: number }) {
+function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; pc: number; onJumpFeature?: (cf: number) => void }) {
   const rows = useMemo(() => {
     if (!cond) return [];
     const nameOf = new Map(cond.features.map((f) => [f.id, f.concept]));
@@ -222,7 +226,8 @@ function WinsPanel({ cond, pc }: { cond: ConditionalData | null; pc: number }) {
             <Bar id={r.id} label={r.name}
               value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
               fmt={`Δwin ${r.delta >= 0 ? "+" : ""}${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}`}
-              width={r.w} color={divergeColor(r.delta, WINRATE_REF)} />
+              width={r.w} color={divergeColor(r.delta, WINRATE_REF)}
+              onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
           </div>
         ))
       )}

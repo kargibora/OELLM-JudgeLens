@@ -46,12 +46,8 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
   if (!bias)
     return (
       <Card>
-        <h2 className="text-lg font-semibold">Confound screen</h2>
-        <p className="mt-2 text-sm text-slate-400">
-          No <code>bias_screen.json</code>. Generate it:{" "}
-          <code className="text-slate-300">bias_screen.py …</code> then re-run the exporter with{" "}
-          <code className="text-slate-300">--bias-screen …</code>.
-        </p>
+        <h2 className="text-lg font-semibold">Bias screen</h2>
+        <p className="mt-2 text-sm text-slate-400">The length-confound screen isn't available for this dataset.</p>
       </Card>
     );
 
