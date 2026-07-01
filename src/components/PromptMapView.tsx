@@ -123,12 +123,7 @@ export default function PromptMapView(
   if (!map)
     return (
       <Card>
-        <p className="text-sm text-slate-400">
-          No prompt map. Generate it with{" "}
-          <code className="text-slate-200">
-            export_viewer_data.py --prompt-map --prompt-lens … --completion-lens …
-          </code>.
-        </p>
+        <p className="text-sm text-slate-400">The prompt map isn't available for this dataset.</p>
       </Card>
     );
 
@@ -308,7 +303,7 @@ export default function PromptMapView(
                     {picked.win === slot && <span className="text-good"> · winner</span>}
                   </div>
                   <div className="max-h-80 overflow-auto whitespace-pre-wrap text-slate-300">
-                    {text || "(no response text — export with --corpus)"}
+                    {text || "(no response text)"}
                   </div>
                 </div>
               )

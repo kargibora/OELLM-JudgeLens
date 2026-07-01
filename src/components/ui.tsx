@@ -96,9 +96,7 @@ export function ConceptLabel({
 }) {
   const unnamed = isUnnamed(name);
   const text = conceptLabel(id, name);
-  const full = unnamed
-    ? `feature ${id} — unnamed (annotate with \`prefscope interpret name\`)`
-    : (name as string);
+  const full = unnamed ? `feature ${id} — unnamed` : (name as string);
   if (wrap)
     return (
       <span className={`break-words ${unnamed ? "italic text-slate-500" : ""} ${className}`}>
@@ -141,4 +139,46 @@ export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number |
 // muted "this is an LLM-assigned label, association not causation" footnote
 export function Caveat({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] leading-snug text-slate-500">{children}</p>;
+}
+
+// clip long text to n chars with an ellipsis (shared across the browse hubs)
+export const clip = (s: string, n = 200) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+// One horizontal concept bar-row: a (wrapping) concept label, a fixed-width magnitude bar,
+// and a right-aligned value. Clickable when `onClick` is given (renders a button). The
+// single shared row for both hubs' Elicits / Activated-by / Reward / Wins-here lists.
+export function ConceptBarRow({
+  id, name, value, title, width, color, onClick, dim,
+}: {
+  id: number;
+  name: string | null | undefined;
+  value: string;
+  title?: string;
+  width: number; // 0..1 of the bar track
+  color: string;
+  onClick?: () => void;
+  dim?: boolean; // e.g. non-significant rows
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs ${
+        onClick ? "rounded hover:bg-edge/30" : "cursor-default"
+      } ${dim ? "opacity-70" : ""}`}
+    >
+      <span className="min-w-0 flex-1">
+        <ConceptLabel id={id} name={name} wrap className="text-slate-300" />
+      </span>
+      <span className="hidden h-2 w-28 shrink-0 overflow-hidden rounded-full bg-edge/40 sm:block">
+        <span
+          className="block h-full rounded-full"
+          style={{ width: `${Math.round(Math.max(0, Math.min(1, width)) * 100)}%`, background: color }}
+        />
+      </span>
+      <span className="w-16 shrink-0 text-right tabular-nums text-slate-300" title={title}>
+        {value}
+      </span>
+    </button>
+  );
 }

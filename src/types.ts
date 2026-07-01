@@ -169,31 +169,6 @@ export interface ResponseMapData {
   behaviors?: Record<string, string>;
 }
 
-// --- prompt-conditioned delta (relationship heatmap) ---
-export interface DeltaCol {
-  id: number;
-  concept?: string | null;
-  behavior?: string | null;
-  cluster_id?: number | null;
-  win_assoc?: number | null;
-  fidelity_pass?: boolean | null;
-  confound_entangled?: boolean | null;
-}
-export interface DeltaCell {
-  pc: number; // prompt concept id
-  cf: number; // completion feature id
-  delta: number;
-  p: number | null; // p_bonferroni
-  stable: boolean; // split-half sign stability
-}
-export interface DeltaData {
-  prompt_concepts: { id: number; name: string | null }[];
-  completion_features: DeltaCol[];
-  cells: DeltaCell[];
-  n_cells: number;
-  n_significant: number;
-}
-
 // --- confound screen ---
 export interface BiasRow {
   feature_id: number;
@@ -236,16 +211,11 @@ export interface ConditionalData {
   n_significant: number;
 }
 
-// conditional.json / delta.json each wrap two keyspaces: RAW (individual prompt
-// concepts, default) and CLUSTERED (prompt clusters — the "group into clusters" toggle).
-// `clustered` is null when the bundle was exported without the clustered CSV.
+// conditional.json wraps two keyspaces: RAW (individual prompt concepts, default) and
+// CLUSTERED (prompt clusters). `clustered` is null when exported without the clustered CSV.
 export interface ConditionalBundle {
   raw: ConditionalData | null;
   clustered: ConditionalData | null;
-}
-export interface DeltaBundle {
-  raw: DeltaData | null;
-  clustered: DeltaData | null;
 }
 
 // --- prompt → response elicitation (co-activation lift, preference-independent) ---
