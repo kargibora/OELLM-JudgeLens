@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
-  Bundle, ConditionalBundle, ConditionalData, DeltaBundle, DeltaData,
+  Bundle, ConditionalBundle, ConditionalData,
   MapData, PromptMapData, ResponseMapData,
 } from "./types";
 
@@ -42,14 +42,15 @@ export async function loadBundle(): Promise<Bundle> {
   // NOTE: the three UMAP maps (map/prompt_map/response_map, ~tens of MB) are NOT loaded
   // here — they're fetched lazily by useMap() when the Maps tab opens, so startup isn't
   // blocked on the heaviest JSON parses in the app.
-  const [meta, features, validation, diagnosis, examples, delta, bias, promptFeatures, conditional, elicitation, reportBattles, headToHead] =
+  // NOTE: delta.json is no longer fetched — the Winner-contrast heatmap that consumed it
+  // was removed, so loading that (large) payload was pure startup cost.
+  const [meta, features, validation, diagnosis, examples, bias, promptFeatures, conditional, elicitation, reportBattles, headToHead] =
     await Promise.all([
       getJSON<Bundle["meta"]>("meta.json"),
       getJSON<Bundle["features"]>("features.json"),
       getJSON<Bundle["validation"]>("validation.json"),
       getJSON<Bundle["diagnosis"]>("diagnosis.json", true),
       getJSON<Bundle["examples"]>("examples.json", true),
-      getJSON<unknown>("delta.json", true),
       getJSON<Bundle["bias"]>("bias_screen.json", true),
       getJSON<Bundle["promptFeatures"]>("prompt_features.json", true),
       getJSON<unknown>("conditional.json", true),
@@ -63,7 +64,6 @@ export async function loadBundle(): Promise<Bundle> {
     validation: validation ?? [],
     diagnosis: diagnosis ?? null,
     examples: examples ?? null,
-    delta: wrapKeyspace<DeltaData>(delta) as DeltaBundle | null,
     bias: bias ?? null,
     promptFeatures: promptFeatures ?? null,
     conditional: wrapKeyspace<ConditionalData>(conditional) as ConditionalBundle | null,

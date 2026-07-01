@@ -240,8 +240,15 @@ function ExamplesPanel({ reportBattles, conceptName }: { reportBattles: ReportBa
     }
     return out.slice(0, 5);
   }, [reportBattles, conceptName]);
-  if (ex.length === 0) return null;
+  if (!reportBattles) return null; // examples not in this bundle at all — nothing to promise
   const tone = (o: string) => (o === "win" ? "text-good" : o === "loss" ? "text-bad" : "text-slate-400");
+  if (ex.length === 0)
+    return (
+      <Card>
+        <h4 className="text-sm font-semibold text-slate-200">Example prompts</h4>
+        <p className="mt-1 px-1 py-3 text-xs text-slate-500">No sample prompts for this concept in the bundle.</p>
+      </Card>
+    );
   return (
     <Card>
       <h4 className="text-sm font-semibold text-slate-200">Example prompts</h4>
