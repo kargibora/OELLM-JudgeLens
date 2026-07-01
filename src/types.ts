@@ -85,6 +85,15 @@ export interface Example {
 
 export type Examples = Record<string, Example[]>;
 
+// per-model example answers: model -> feature_id -> the model's OWN answers exhibiting it
+export interface ModelExample {
+  z: number; // activation of the feature on this answer
+  prompt: string;
+  answer: string; // this model's answer
+  outcome: "win" | "loss" | "tie" | "?";
+}
+export type ExamplesByModel = Record<string, Record<string, ModelExample[]>>;
+
 export interface MapPoint {
   x: number;
   y: number;

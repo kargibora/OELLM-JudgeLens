@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   Bar,
@@ -10,9 +10,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Diagnosis, Examples, Feature, HeadToHead, ReportBattles } from "../types";
+import type { Diagnosis, Examples, ExamplesByModel, Feature, HeadToHead, ModelExample, ReportBattles } from "../types";
 import { Card, Explain, Metric, conceptLabel, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
-import { pct } from "../data";
+import { fetchOptional, pct } from "../data";
 import { H2HIndex, type H2HCell } from "../h2h";
 import GapQuadrant, { type QuadrantPoint } from "./GapQuadrant";
 
@@ -235,6 +235,11 @@ export default function ReportCard({
   const [openFeat, setOpenFeat] = useState<{ fid: number; src: "fire" | "gap" } | null>(null);
   const [promptQuery, setPromptQuery] = useState("");
   const [showAllPrompts, setShowAllPrompts] = useState(false);
+  // per-model example answers — large, fetched lazily when the report tab first mounts
+  const [exByModel, setExByModel] = useState<ExamplesByModel | null>(null);
+  useEffect(() => {
+    fetchOptional<ExamplesByModel>("examples_by_model.json").then(setExByModel).catch(() => {});
+  }, []);
 
   // model picker options: search filter + weakest-first (gaps are the point), folded in
   // from the old Model-diagnosis tab
@@ -671,6 +676,7 @@ export default function ReportCard({
                   fid={openFeat.fid}
                   concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
                   examples={examples}
+                  mine={exByModel?.[model]?.[String(openFeat.fid)] ?? null}
                   model={model}
                   onClose={() => setOpenFeat(null)}
                 />
@@ -696,6 +702,7 @@ export default function ReportCard({
                   fid={openFeat.fid}
                   concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
                   examples={examples}
+                  mine={exByModel?.[model]?.[String(openFeat.fid)] ?? null}
                   model={model}
                   onClose={() => setOpenFeat(null)}
                 />
@@ -811,59 +818,75 @@ function FeatureExamplesDrill({
   fid,
   concept,
   examples,
+  mine,
   model,
   onClose,
 }: {
   fid: number;
   concept: string;
   examples: Examples | null;
+  mine: ModelExample[] | null; // this model's OWN answers (examples_by_model), preferred
   model: string;
   onClose: () => void;
 }) {
-  const raw = examples?.[String(fid)] ?? [];
-  const items = raw
-    .map((e) => {
-      const aSide = e.z >= 0; // A expresses the feature more when z_diff > 0
-      const exModel = aSide ? e.model_a : e.model_b;
-      return {
-        z: e.z,
-        prompt: e.prompt,
-        exModel,
-        completion: aSide ? e.completion_a : e.completion_b,
-        byThisModel: exModel === model,
-      };
-    })
-    .sort((a, b) => Number(b.byThisModel) - Number(a.byThisModel) || Math.abs(b.z) - Math.abs(a.z));
-  const mine = items.filter((i) => i.byThisModel).length;
   const clipC = (s: string, n = 1600) => (s.length > n ? s.slice(0, n) + " …[truncated]" : s);
+  const tone = (o: string) =>
+    o === "win" ? "text-good" : o === "loss" ? "text-bad" : "text-slate-400";
+
+  // prefer the model's OWN answers; fall back to the global cross-model set (labelled).
+  const useMine = !!mine && mine.length > 0;
+  const globalItems = (examples?.[String(fid)] ?? [])
+    .map((e) => {
+      const aSide = e.z >= 0;
+      return { z: e.z, prompt: e.prompt, exModel: aSide ? e.model_a : e.model_b,
+               completion: aSide ? e.completion_a : e.completion_b };
+    })
+    .sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+  const empty = useMine ? false : globalItems.length === 0;
 
   return (
     <div className="mt-3 rounded-xl border border-accent/40 bg-accent/5 p-3">
       <div className="mb-2 flex items-start justify-between gap-2">
         <h4 className="text-sm font-semibold text-slate-200">
-          Example answers exhibiting “{concept}”
+          {useMine ? `${model} answers exhibiting ` : "Example answers exhibiting "}“{concept}”
         </h4>
         <button onClick={onClose} className="text-xs text-slate-500 hover:text-slate-300">close</button>
       </div>
-      {raw.length === 0 ? (
+      {empty ? (
         <p className="px-1 py-3 text-xs text-slate-500">
-          No examples for this feature in the bundle (only verified features carry examples — re-export
-          with <code>--examples-per-feature</code> and a corpus to populate).
+          No examples for this feature in the bundle — re-export with{" "}
+          <code>--examples-by-model</code> (this model's own answers) or{" "}
+          <code>--examples-per-feature</code> and a corpus.
         </p>
+      ) : useMine ? (
+        <div className="flex flex-col gap-3">
+          {mine!.map((it, i) => (
+            <div key={i} className="rounded-lg border border-edge bg-ink/40 p-2 text-xs">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="rounded bg-accent/20 px-1.5 py-0.5 font-medium text-accent">{model}</span>
+                {it.outcome && it.outcome !== "?" && (
+                  <span className={`font-semibold ${tone(it.outcome)}`}>{it.outcome}</span>
+                )}
+                <span className="font-mono text-slate-500">activation {it.z >= 0 ? "+" : ""}{it.z.toFixed(2)}</span>
+              </div>
+              <div className="mb-1 text-slate-400">
+                <span className="font-semibold text-slate-300">prompt:</span> {clip(it.prompt, 280)}
+              </div>
+              <div className="whitespace-pre-wrap text-slate-300">{clipC(it.answer)}</div>
+            </div>
+          ))}
+        </div>
       ) : (
         <>
           <p className="mb-2 text-[11px] text-slate-500">
-            {mine > 0
-              ? `${mine} of these top-activating examples are from ${model} (shown first).`
-              : `None of the sampled top-activating examples are from ${model}; showing where this behaviour fires strongest across models — so you can see what it looks like.`}
+            No answers from {model} fire this feature in the bundle; showing where it fires
+            strongest across models so you can see what it looks like.
           </p>
           <div className="flex flex-col gap-3">
-            {items.map((it, i) => (
+            {globalItems.map((it, i) => (
               <div key={i} className="rounded-lg border border-edge bg-ink/40 p-2 text-xs">
                 <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <span className={`rounded px-1.5 py-0.5 font-medium ${it.byThisModel ? "bg-accent/20 text-accent" : "bg-slate-600/25 text-slate-400"}`}>
-                    {it.exModel}{it.byThisModel ? " · this model" : ""}
-                  </span>
+                  <span className="rounded bg-slate-600/25 px-1.5 py-0.5 font-medium text-slate-400">{it.exModel}</span>
                   <span className="font-mono text-slate-500">activation {it.z >= 0 ? "+" : ""}{it.z.toFixed(2)}</span>
                 </div>
                 <div className="mb-1 text-slate-400">
