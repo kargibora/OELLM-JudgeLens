@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, ArrowRightLeft, BarChart3, ClipboardList, FlaskConical,
+  AlertTriangle, ArrowRightLeft, BarChart3, Boxes, ClipboardList, FlaskConical,
   LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Sparkles, Table2,
 } from "lucide-react";
 import type { Bundle } from "./types";
@@ -13,6 +13,7 @@ import FeatureDetail from "./components/FeatureDetail";
 import MapsTab from "./components/MapsTab";
 import Elicitation from "./components/Elicitation";
 import PromptBrowser from "./components/PromptBrowser";
+import FeaturePanel from "./components/FeaturePanel";
 import BiasScreen from "./components/BiasScreen";
 import PromptFeatures from "./components/PromptFeatures";
 import ReportCard from "./components/ReportCard";
@@ -23,6 +24,7 @@ import GeneralBehaviours from "./components/GeneralBehaviours";
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "features", label: "Features", icon: Table2 },
+  { id: "feature-panel", label: "Feature panel", icon: Boxes },
   { id: "reward", label: "Win relevance", icon: BarChart3 },
   { id: "elicitation", label: "Elicits", icon: ArrowRightLeft, groupStart: "Prompt ↔ Response" },
   { id: "general", label: "General behaviours", icon: Sparkles },
@@ -99,6 +101,16 @@ export default function App() {
       {tab === "overview" && <Overview bundle={bundle} />}
       {tab === "features" && <FeaturesTable features={bundle.features} />}
       {tab === "reward" && <WinRelevance features={bundle.features} />}
+      {tab === "feature-panel" && (
+        <FeaturePanel
+          features={bundle.features}
+          elicitation={bundle.elicitation}
+          conditional={bundle.conditional}
+          examples={bundle.examples}
+          focus={focusCell ? { cf: focusCell.cf } : null}
+          onJumpPrompt={(pc) => { setFocusCell({ pc, cf: -1 }); setTab("prompts-outcome"); }}
+        />
+      )}
       {tab === "prompts-outcome" && (
         <PromptBrowser
           conditional={bundle.conditional}
