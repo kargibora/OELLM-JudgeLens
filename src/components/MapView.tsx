@@ -128,13 +128,7 @@ export default function MapView({ map }: { map: MapData | null }) {
   if (!map)
     return (
       <Card>
-        <p className="text-sm text-slate-400">
-          No map data. Generate it with{" "}
-          <code className="text-slate-200">
-            python scripts/export_viewer_data.py --map …
-          </code>{" "}
-          (needs <code className="text-slate-200">umap-learn</code>).
-        </p>
+        <p className="text-sm text-slate-400">The map isn't available for this dataset.</p>
       </Card>
     );
 
@@ -265,7 +259,7 @@ export default function MapView({ map }: { map: MapData | null }) {
                 A — {picked.ma}
               </div>
               <div className="max-h-80 overflow-auto whitespace-pre-wrap text-slate-300">
-                {picked.ca || "(no response text — export with --corpus)"}
+                {picked.ca || "(no response text)"}
               </div>
             </div>
             <div className="rounded-lg border border-edge bg-ink/60 p-2 text-sm">
@@ -273,7 +267,7 @@ export default function MapView({ map }: { map: MapData | null }) {
                 B — {picked.mb}
               </div>
               <div className="max-h-80 overflow-auto whitespace-pre-wrap text-slate-300">
-                {picked.cb || "(no response text — export with --corpus)"}
+                {picked.cb || "(no response text)"}
               </div>
             </div>
           </div>

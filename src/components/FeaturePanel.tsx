@@ -4,7 +4,7 @@ import type {
   ConditionalBundle, ElicitationData, Examples, Feature,
 } from "../types";
 import {
-  Card, Explain, ConceptLabel, conceptLabel, divergeColor, WINRATE_REF, VerifiedBadge,
+  Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, clip, divergeColor, WINRATE_REF, VerifiedBadge,
 } from "./ui";
 import { fmt, pct } from "../data";
 
@@ -14,7 +14,6 @@ import { fmt, pct } from "../data";
 // Features table, Win relevance, Feature detail, General behaviours, and Elicits' feature
 // side. Corpus-marginal (aggregated over all models) — per-model lives in Model report.
 
-const clip = (s: string, n = 200) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 type Sort = "reward" | "generality" | "fidelity" | "name";
 type SubTab = "activated" | "reward" | "examples";
 
@@ -197,21 +196,6 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
   );
 }
 
-function Bar({ id, label, value, fmt: title, width, color, onClick }: {
-  id: number; label: string | null; value: string; fmt?: string; width: number; color: string; onClick?: () => void;
-}) {
-  return (
-    <button onClick={onClick} disabled={!onClick}
-      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs ${onClick ? "hover:bg-edge/30 rounded" : "cursor-default"}`}>
-      <span className="min-w-0 flex-1"><ConceptLabel id={id} name={label} wrap className="text-slate-300" /></span>
-      <span className="hidden h-2 w-28 shrink-0 overflow-hidden rounded-full bg-edge/40 sm:block">
-        <span className="block h-full rounded-full" style={{ width: `${Math.round(width * 100)}%`, background: color }} />
-      </span>
-      <span className="w-16 shrink-0 text-right tabular-nums text-slate-300" title={title}>{value}</span>
-    </button>
-  );
-}
-
 function ActivatedBy({ elicitation, fid, unverified, onJumpPrompt }: { elicitation: ElicitationData | null; fid: number; unverified?: boolean; onJumpPrompt?: (pc: number) => void }) {
   const rows = useMemo(() => {
     if (!elicitation) return [];
@@ -227,9 +211,9 @@ function ActivatedBy({ elicitation, fid, unverified, onJumpPrompt }: { elicitati
       {rows.length === 0 ? <p className="px-1 py-3 text-sm text-slate-500">
         {unverified ? "This feature is unverified — prompt-association analysis covers verified features only."
           : "No specific prompt raises this feature above its base rate (it fires broadly)."}</p> :
-        rows.map((r) => <Bar key={r.id} id={r.id} label={r.name} value={`×${r.lift.toFixed(1)}`}
-          fmt={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
-          width={r.w} color="rgba(96,165,250,0.85)" onClick={onJumpPrompt ? () => onJumpPrompt(r.id) : undefined} />)}
+        rows.map((r) => <ConceptBarRow key={r.id} id={r.id} name={r.name} value={`×${r.lift.toFixed(1)}`}
+          title={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
+          width={r.w} color="rgba(96,165,250,0.85)" dim={!r.sig} onClick={onJumpPrompt ? () => onJumpPrompt(r.id) : undefined} />)}
     </Card>
   );
 }
@@ -249,18 +233,16 @@ function RewardByPrompt({ cond, fid, overall, unverified, onJumpPrompt }: {
       <h4 className="text-sm font-semibold text-slate-200">Reward by prompt type</h4>
       <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
         Δwin-rate from producing this feature, within each prompt type (length-controlled).
-        {overall != null && <> Overall: <span className="text-slate-300">{overall >= 0 ? "+" : ""}{(overall * 100).toFixed(0)}pp</span>.</>} <span className="text-slate-400">bold</span> = significant.
+        {overall != null && <> Overall: <span className="text-slate-300">{overall >= 0 ? "+" : ""}{(overall * 100).toFixed(0)}pp</span>.</>} Faded = not significant.
       </p>
       {rows.length === 0 ? <p className="px-1 py-3 text-sm text-slate-500">
         {!cond ? "No conditional win data in this bundle."
           : unverified ? "This feature is unverified — per-prompt-type reward covers verified features only."
           : "No prompt-type reward data for this feature."}</p> :
         rows.map((r) => (
-          <div key={r.id} className={r.sig ? "font-medium" : "opacity-70"}>
-            <Bar id={r.id} label={r.name} value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
-              fmt={`Δwin ${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}`}
-              width={r.w} color={divergeColor(r.delta, WINRATE_REF)} onClick={onJumpPrompt ? () => onJumpPrompt(r.id) : undefined} />
-          </div>
+          <ConceptBarRow key={r.id} id={r.id} name={r.name} value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
+            title={`Δwin ${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}`}
+            width={r.w} color={divergeColor(r.delta, WINRATE_REF)} dim={!r.sig} onClick={onJumpPrompt ? () => onJumpPrompt(r.id) : undefined} />
         ))}
     </Card>
   );

@@ -103,11 +103,7 @@ export default function ResponseMapView({ map }: { map: ResponseMapData | null }
   if (!map)
     return (
       <Card>
-        <p className="text-sm text-slate-400">
-          No response map. Generate it with{" "}
-          <code className="text-slate-200">export_viewer_data.py --response-map</code>{" "}
-          (individual lens with z_a/z_b).
-        </p>
+        <p className="text-sm text-slate-400">The response map isn't available for this dataset.</p>
       </Card>
     );
 

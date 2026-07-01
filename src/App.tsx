@@ -98,6 +98,7 @@ export default function App() {
           conditional={bundle.conditional}
           elicitation={bundle.elicitation}
           reportBattles={bundle.reportBattles}
+          promptFeatures={bundle.promptFeatures}
           focus={promptFocus}
           onJumpFeature={(cf) => { setFocusCell({ pc: -1, cf }); setTab("feature-panel"); }}
         />

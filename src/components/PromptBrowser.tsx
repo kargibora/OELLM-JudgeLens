@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import type { ConditionalBundle, ConditionalData, ElicitationData, ReportBattles } from "../types";
-import { Card, Explain, ConceptLabel, conceptLabel, divergeColor, WINRATE_REF } from "./ui";
+import type { ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
+import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, clip, divergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
 
 // Prompt-first browser: pick a prompt concept and read, on one page, what responses it
@@ -9,24 +9,31 @@ import { pct } from "../data";
 // length-controlled Δwin-rate within that prompt type), plus example prompts + outcomes.
 // Replaces the dense feature×prompt heatmap.
 
-const clip = (s: string, n = 200) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
-
 type PC = { id: number; name: string | null; n: number; maxAbsDelta: number };
 
 export default function PromptBrowser({
   conditional,
   elicitation,
   reportBattles,
+  promptFeatures,
   focus,
   onJumpFeature,
 }: {
   conditional: ConditionalBundle | null;
   elicitation: ElicitationData | null;
   reportBattles: ReportBattles | null;
+  promptFeatures: PromptFeatures | null;
   focus?: { pc: number } | null;
   onJumpFeature?: (cf: number) => void;
 }) {
   const cond = conditional?.raw ?? null; // raw = individual prompt concepts (not clusters)
+  // prompt-lens verification/cluster per prompt concept (from the prompt lens)
+  const pmeta = useMemo(() => {
+    const m = new Map<number, { verified: boolean; behavior?: string }>();
+    for (const p of promptFeatures?.features ?? [])
+      m.set(p.feature_id, { verified: !!p.fidelity_pass, behavior: p.behavior });
+    return m;
+  }, [promptFeatures]);
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"n" | "effect">("effect");
   const [sel, setSel] = useState<number | null>(null);
@@ -106,22 +113,29 @@ export default function PromptBrowser({
             ))}
           </div>
           <div className="flex flex-col">
-            {filtered.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setSel(p.id)}
-                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
-                  sel === p.id ? "bg-accent/20 text-slate-100" : "text-slate-300 hover:bg-edge/40"
-                }`}
-              >
-                <span className="min-w-0 flex-1">
-                  <ConceptLabel id={p.id} name={p.name} wrap />
-                </span>
-                <span className="shrink-0 text-right text-xs tabular-nums text-slate-500">
-                  n={p.n.toLocaleString()}
-                </span>
-              </button>
-            ))}
+            {filtered.map((p) => {
+              const meta = pmeta.get(p.id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setSel(p.id)}
+                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
+                    sel === p.id ? "bg-accent/20 text-slate-100" : "text-slate-300 hover:bg-edge/40"
+                  }`}
+                >
+                  <span className="shrink-0 text-xs" title={meta?.verified ? "verified prompt concept" : "unverified"}>
+                    {meta?.verified ? <span className="text-good">✓</span> : <span className="text-slate-600">·</span>}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <ConceptLabel id={p.id} name={p.name} wrap />
+                    {meta?.behavior && <span className="ml-1 text-[10px] text-slate-500">· {meta.behavior}</span>}
+                  </span>
+                  <span className="shrink-0 text-right text-xs tabular-nums text-slate-500">
+                    n={p.n.toLocaleString()}
+                  </span>
+                </button>
+              );
+            })}
             {filtered.length === 0 && (
               <p className="px-1 py-3 text-sm text-slate-500">No prompt concept matches “{query}”.</p>
             )}
@@ -153,24 +167,6 @@ export default function PromptBrowser({
   );
 }
 
-// horizontal bar row (simple, readable — no chart lib); clickable when onClick given
-function Bar({ label, id, value, fmt, width, color, onClick }: {
-  label: string | null; id: number; value: string; fmt?: string; width: number; color: string; onClick?: () => void;
-}) {
-  return (
-    <button onClick={onClick} disabled={!onClick}
-      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs ${onClick ? "rounded hover:bg-edge/30" : "cursor-default"}`}>
-      <span className="min-w-0 flex-1">
-        <ConceptLabel id={id} name={label} wrap className="text-slate-300" />
-      </span>
-      <span className="hidden h-2 w-28 shrink-0 overflow-hidden rounded-full bg-edge/40 sm:block">
-        <span className="block h-full rounded-full" style={{ width: `${Math.round(width * 100)}%`, background: color }} />
-      </span>
-      <span className="w-16 shrink-0 text-right tabular-nums text-slate-300" title={fmt}>{value}</span>
-    </button>
-  );
-}
-
 function ElicitsPanel({ elicitation, pc, onJumpFeature }: { elicitation: ElicitationData | null; pc: number; onJumpFeature?: (cf: number) => void }) {
   const rows = useMemo(() => {
     if (!elicitation) return [];
@@ -190,9 +186,9 @@ function ElicitsPanel({ elicitation, pc, onJumpFeature }: { elicitation: Elicita
         <p className="px-1 py-3 text-sm text-slate-500">No elicited response concept in the bundle.</p>
       ) : (
         rows.map((r) => (
-          <Bar key={r.id} id={r.id} label={r.name}
-            value={`×${r.lift.toFixed(1)}`} fmt={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
-            width={r.w} color="rgba(96,165,250,0.85)"
+          <ConceptBarRow key={r.id} id={r.id} name={r.name}
+            value={`×${r.lift.toFixed(1)}`} title={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
+            width={r.w} color="rgba(96,165,250,0.85)" dim={!r.sig}
             onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
         ))
       )}
@@ -214,7 +210,7 @@ function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; 
       <h4 className="text-sm font-semibold text-slate-200">What wins here</h4>
       <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
         Δwin-rate when a response shows this behaviour vs not, on this prompt type
-        (length-controlled). <span className="text-slate-400">bold</span> = significant.
+        (length-controlled). Faded = not significant.
       </p>
       {rows.length === 0 ? (
         <p className="px-1 py-3 text-sm text-slate-500">
@@ -222,13 +218,11 @@ function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; 
         </p>
       ) : (
         rows.map((r) => (
-          <div key={r.id} className={r.sig ? "font-medium" : "opacity-70"}>
-            <Bar id={r.id} label={r.name}
-              value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
-              fmt={`Δwin ${r.delta >= 0 ? "+" : ""}${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}`}
-              width={r.w} color={divergeColor(r.delta, WINRATE_REF)}
-              onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
-          </div>
+          <ConceptBarRow key={r.id} id={r.id} name={r.name}
+            value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
+            title={`Δwin ${r.delta >= 0 ? "+" : ""}${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}`}
+            width={r.w} color={divergeColor(r.delta, WINRATE_REF)} dim={!r.sig}
+            onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
         ))
       )}
     </Card>
