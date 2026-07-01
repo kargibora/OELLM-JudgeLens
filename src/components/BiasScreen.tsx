@@ -52,23 +52,46 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
     );
 
   const nFlag = data.filter((d) => d.confound_entangled).length;
+  // per-feature verdict: for the rewarded features, does the reward survive length control?
+  const rewarded = useMemo(
+    () => data.filter((d) => (d.win_assoc ?? 0) > 0).sort((a, b) => (b.win_assoc ?? 0) - (a.win_assoc ?? 0)).slice(0, 12),
+    [data]
+  );
 
   return (
     <Card>
-      <h2 className="text-lg font-semibold">Confound screen — rewarded vs length-entangled</h2>
+      <h2 className="text-lg font-semibold">Bias screen — is the reward real, or just length?</h2>
       <div className="my-3">
         <Explain>
-          Each point is a response feature. <b>x</b> = how much humans reward it; <b>y</b> = how
-          much its direction <i>co-varies with length</i> (
-          <span className="text-slate-300">length(A) − length(B)</span>). The{" "}
-          <span style={{ color: CONFOUND }}>amber</span> points are{" "}
-          <b>candidates for inspection</b>: rewarded <i>and</i> their reward largely collapses once
-          length is partialled out (top-right). This is a <b>screening tool, not a bias verdict</b>{" "}
-          — high covariance means you can&apos;t separate quality from length, not that the feature
-          is fake. {nFlag} of {data.length} features flagged. (Hover for the length-controlled
-          reward.)
+          For each rewarded behaviour, does its reward <b>survive</b> once we control for
+          answer length, or is it <b>length-driven</b>? A behaviour whose reward largely
+          collapses when length is partialled out is a candidate for skepticism — you can’t
+          separate quality from verbosity. {nFlag} of {data.length} rewarded features look
+          length-entangled. (This is a screening flag, not proof the feature is fake.)
         </Explain>
       </div>
+
+      {rewarded.length > 0 && (
+        <div className="mb-4">
+          <h3 className="mb-1 text-sm font-semibold text-slate-200">Does the reward survive length control?</h3>
+          <div className="flex flex-col">
+            {rewarded.map((d) => (
+              <div key={d.feature_id} className="flex items-center gap-3 rounded px-2 py-1 text-xs hover:bg-edge/20">
+                <span className="min-w-0 flex-1 truncate text-slate-300" title={d.concept ?? `feature ${d.feature_id}`}>
+                  {d.concept ?? `feature ${d.feature_id}`}
+                </span>
+                <span className="w-40 shrink-0 text-right tabular-nums text-slate-500">
+                  reward {d.win_assoc?.toFixed(2) ?? "—"} → after length {d.correlation_resid_len?.toFixed(2) ?? "—"}
+                </span>
+                <span className={`w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-[11px] font-medium ${
+                  d.confound_entangled ? "bg-amber-500/15 text-amber-400" : "bg-good/15 text-good"}`}>
+                  {d.confound_entangled ? "length-driven" : "survives"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <ResponsiveContainer width="100%" height={460}>
         <ScatterChart margin={{ left: 8, right: 24, top: 8, bottom: 24 }}>
           <CartesianGrid stroke="#1f2937" />
