@@ -37,6 +37,9 @@ export default function FeaturePanel({
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<Sort>("reward");
   const [onlyGeneral, setOnlyGeneral] = useState<"" | "general" | "content">("");
+  // verified features are the only ones with elicitation/conditional data, so default to
+  // them — otherwise browsing lands on unverified features with empty sub-tabs.
+  const [verifiedOnly, setVerifiedOnly] = useState(true);
   const [sel, setSel] = useState<number | null>(null);
   const [sub, setSub] = useState<SubTab>("activated");
 
@@ -55,6 +58,7 @@ export default function FeaturePanel({
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     let r = named.filter((f) => !q || (f.concept ?? "").toLowerCase().includes(q));
+    if (verifiedOnly) r = r.filter((f) => f.fidelity_pass);
     if (onlyGeneral) r = r.filter((f) => {
       if (f.generality == null) return false;
       const p = genPct(f.generality);
@@ -67,7 +71,7 @@ export default function FeaturePanel({
       if (sortBy === "fidelity") return Number(b.fidelity_pass ?? false) - Number(a.fidelity_pass ?? false) || Math.abs(rew(b)) - Math.abs(rew(a));
       return (a.concept ?? "").localeCompare(b.concept ?? "");
     });
-  }, [named, query, onlyGeneral, sortBy, genPct]);
+  }, [named, query, onlyGeneral, verifiedOnly, sortBy, genPct]);
 
   const rewardRef = useMemo(
     () => Math.max(0.02, ...named.map((f) => Math.abs(f.delta_win_rate ?? f.win_assoc ?? 0))),
@@ -110,13 +114,17 @@ export default function FeaturePanel({
                 className={`rounded px-1.5 py-0.5 ${sortBy === s ? "bg-accent text-white" : "hover:text-slate-200"}`}>{s}</button>
             ))}
           </div>
-          <div className="mb-2 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+          <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
             show:
             {([["", "all"], ["general", "general"], ["content", "content-bound"]] as const).map(([v, lbl]) => (
               <button key={v} onClick={() => setOnlyGeneral(v)}
                 className={`rounded px-1.5 py-0.5 ${onlyGeneral === v ? "bg-accent text-white" : "hover:text-slate-200"}`}>{lbl}</button>
             ))}
           </div>
+          <label className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-400">
+            <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="accent-accent" />
+            verified only <span className="text-slate-600">(unverified features have no prompt/reward data)</span>
+          </label>
           <div className="flex flex-col">
             {rows.map((f) => {
               const rew = f.delta_win_rate ?? f.win_assoc ?? 0;
