@@ -158,7 +158,7 @@ function Section({
       {hint && <p className="mb-1 mt-0.5 text-[11px] text-slate-500">{hint}</p>}
       {empty ? (
         <p className="px-1 py-4 text-sm text-slate-500">
-          Not in this bundle — re-export with a built bank and a prompt lens.
+          Not available for this dataset.
         </p>
       ) : (
         <div className="mt-2">{children}</div>
@@ -502,21 +502,13 @@ export default function ReportCard({
 
   const battlesFor = (concept: string) => reportBattles?.[model]?.[concept] ?? [];
 
-  if (!diagnosis)
-    return <Card>No diagnosis exported. Build a bank and re-run export_viewer_data.py.</Card>;
-
-  if (diagnosis.error === "no_bank")
+  if (!diagnosis || diagnosis.error === "no_bank")
     return (
       <Card>
-        <h2 className="text-lg font-semibold text-amber-400">No model report yet</h2>
+        <h2 className="text-lg font-semibold text-amber-400">No model report for this dataset</h2>
         <p className="mt-1 text-sm text-slate-300">
-          This bundle has no oriented bank, so per-model diagnoses couldn't be built. Build one
-          and re-export:
+          Per-model diagnoses aren't available for this bundle.
         </p>
-        <pre className="mt-2 overflow-x-auto rounded-lg border border-edge bg-ink p-3 text-xs text-slate-300">
-          {diagnosis.message ??
-            "prefscope build-bank --lens-dir <lens> --from-embeddings <dump> --label human --corpus <corpus> --out <lens>/bank\nthen re-run export_viewer_data.py"}
-        </pre>
       </Card>
     );
 
@@ -585,9 +577,7 @@ export default function ReportCard({
           {!hasFire && (
             <Card>
               <p className="text-sm text-amber-400">
-                This bundle predates the visual report card — re-run export_viewer_data.py (with a
-                built bank and a prompt lens) to populate the behavioural fingerprint, prompt types,
-                and prompt→response sections. Showing rewarded gaps only.
+                The behavioural fingerprint isn't available for this dataset — showing rewarded gaps only.
               </p>
             </Card>
           )}
@@ -655,8 +645,8 @@ export default function ReportCard({
               )}
               {fireMode === "model" && !h2hIndex && (
                 <p className="text-[11px] text-slate-500">
-                  Pooled fire-rate difference (mixes each model's own prompt distribution). Re-export
-                  with <code>--head-to-head</code> for a prompt-matched, significance-tested contrast.
+                  Pooled fire-rate difference (mixes each model's own prompt distribution) — the
+                  prompt-matched head-to-head isn't available for this dataset.
                 </p>
               )}
               <div className="grid gap-4 lg:grid-cols-2">
@@ -776,8 +766,7 @@ export default function ReportCard({
             )}
             {row.prompt_types && row.prompt_types.length > 0 && !reportBattles?.[model] && (
               <p className="mt-2 text-[11px] text-slate-500">
-                Rows aren't clickable for this model — re-export with <code>--report-battles</code> to
-                enable the battle drill-in.
+                Sample battles for this model's prompt types aren't available in this dataset.
               </p>
             )}
           </Section>
@@ -854,9 +843,7 @@ function FeatureExamplesDrill({
       </div>
       {empty ? (
         <p className="px-1 py-3 text-xs text-slate-500">
-          No examples for this feature in the bundle — re-export with{" "}
-          <code>--examples-by-model</code> (this model's own answers) or{" "}
-          <code>--examples-per-feature</code> and a corpus.
+          No example answers for this feature in this dataset.
         </p>
       ) : useMine ? (
         <div className="flex flex-col gap-3">
