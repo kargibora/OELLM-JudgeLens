@@ -1,5 +1,6 @@
 export interface Meta {
   lens: string;
+  input_rep?: string | null; // "individual" | "difference" | "prompt" — drives the lens description
   embed_model_id: string | null;
   m_total: number;
   k: number;
@@ -7,6 +8,7 @@ export interface Meta {
   n_battles: number;
   ev: number | null;
   n_verified: number | null;
+  n_named?: number | null; // named features (verified fraction reads against this, not m_total)
   loo_r2: number | null;
   n_models: number | null;
 }
