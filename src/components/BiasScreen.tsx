@@ -66,7 +66,7 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
           For each rewarded behaviour, does its reward <b>survive</b> once we control for
           answer length, or is it <b>length-driven</b>? A behaviour whose reward largely
           collapses when length is partialled out is a candidate for skepticism — you can’t
-          separate quality from verbosity. {nFlag} of {data.length} rewarded features look
+          separate quality from verbosity. {nFlag} of {data.length} screened features look
           length-entangled. (This is a screening flag, not proof the feature is fake.)
         </Explain>
       </div>
