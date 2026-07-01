@@ -3,17 +3,18 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ElicitationData, Examples, Feature } from "../types";
 import { Card, Explain, ConceptLabel, conceptLabel } from "./ui";
 
-// A dedicated view that decomposes response features by GENERALITY — how broadly a
-// behaviour fires across distinct prompt concepts. High = a general behaviour ("responds
-// in the user's language", "narrative fiction"), fires regardless of topic. Low = content-
-// bound ("crypto investment advice"), tied to one kind of prompt. generality is the
-// entropy of the feature's prompt co-occurrence mass, normalized by the full keyspace;
-// n_prompt_types (how many prompt concepts *significantly* trigger it) is ~the INVERSE, so
-// it's shown as a separate "topic-gated" signal, not a second generality number.
+// A dedicated view that decomposes response features by GENERALITY = pervasiveness: the
+// fraction of responses a feature fires in. A general behaviour pervades responses
+// ("refuses", "produces a list"); a niche / content-bound feature fires rarely ("American
+// football"). Fire rate is the robust signal — topic-based measures can't isolate niche
+// content the prompt lens has no concept for. n_prompt_types (# prompt concepts that
+// significantly trigger it) is shown as a separate "topic-gated" context column. Fire rates
+// are skewed, so the bar + the general/content-bound cut use the PERCENTILE, while the
+// number shows the raw "fires in X%".
 
 const clip = (s: string, n = 320) => (s.length > n ? s.slice(0, n) + " …" : s);
 
-type Row = Feature & { generality: number };
+type Row = Feature & { generality: number; pct: number };
 
 export default function GeneralBehaviours({
   features,
@@ -24,15 +25,15 @@ export default function GeneralBehaviours({
   elicitation: ElicitationData | null;
   examples: Examples | null;
 }) {
-  const [thr, setThr] = useState(0.4); // movable cut between general / content-bound
+  const [thr, setThr] = useState(0.6); // percentile cut: general = top (1 - thr) by fire rate
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<number | null>(null);
 
-  // features with a KNOWN generality (null = below the support floor: excluded, not 0) and
-  // a real concept name. Sorted most-general first.
+  // named features with a fire rate, sorted most-pervasive first, tagged with their
+  // percentile (fire rates are skewed, so the bar + cut use percentile for even spacing).
   const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
-    return features
+    const named = features
       .filter(
         (f) =>
           f.generality != null &&
@@ -43,17 +44,13 @@ export default function GeneralBehaviours({
       )
       .map((f) => ({ ...f, generality: f.generality as number }))
       .sort((a, b) => b.generality - a.generality);
+    const n = named.length;
+    return named.map((f, i) => ({ ...f, pct: n > 1 ? (n - 1 - i) / (n - 1) : 1 }));
   }, [features, query]);
 
-  // how many named features were dropped for insufficient support (generality === null)
-  const nLowSupport = useMemo(
-    () => features.filter((f) => f.concept && f.concept.trim() !== "" && f.generality == null).length,
-    [features]
-  );
-
   const anyGenerality = features.some((f) => f.generality != null && !Number.isNaN(f.generality));
-  const general = rows.filter((r) => r.generality >= thr);
-  const bound = rows.filter((r) => r.generality < thr);
+  const general = rows.filter((r) => r.pct >= thr);
+  const bound = rows.filter((r) => r.pct < thr);
 
   if (!anyGenerality)
     return (
@@ -61,8 +58,8 @@ export default function GeneralBehaviours({
         <h2 className="text-lg font-semibold text-amber-400">No generality data yet</h2>
         <p className="mt-1 text-sm text-slate-300">
           This bundle has no per-feature <code>generality</code>. Re-run{" "}
-          <code>export_viewer_data.py</code> (it reads it from the elicitation co-occurrence
-          table) to populate this view.
+          <code>export_viewer_data.py</code> against an individual lens (it reads the
+          per-response codes <code>z_a</code>/<code>z_b</code>) to populate this view.
         </p>
       </Card>
     );
@@ -70,18 +67,15 @@ export default function GeneralBehaviours({
   return (
     <div className="flex flex-col gap-4">
       <Explain>
-        Response features split by <b>generality</b> — how far a feature's firing departs
-        from the base rate of prompt topics. <b>General</b> behaviours ("responds in the
-        user's language", "tells a story") fire like the background, regardless of topic;
-        <b>content-bound</b> ones ("crypto investment advice", "translation") fire
-        disproportionately on specific prompts. Generality is{" "}
-        <span title="1 - KL( P(concept | feature) || P(concept) ) / log K">
-          1 − (topic-selectivity)
-        </span>{" "}
-        — base-rate-corrected, so a feature that just tracks how common each topic is scores
-        high, not one that merely co-occurs with many common topics (a continuous axis — the
-        cut below is yours to move, not ground truth). The <i>topic-gated</i> count is a
-        related signal: how many prompt concepts significantly trigger the feature.
+        Response features split by <b>generality</b> = <b>pervasiveness</b>: the fraction of
+        responses a behaviour appears in. <b>General</b> behaviours ("refuses", "produces a
+        list", "responds in the user's language") pervade responses; <b>content-bound</b>
+        ones ("American football", "crypto investment advice") fire in a tiny fraction. Fire
+        rate is the robust signal here — with this prompt lens, topic-based measures can't
+        isolate niche content that has no matching prompt concept, whereas 0.5% of responses
+        is niche regardless. The bar and the cut below use the <i>percentile</i> (fire rates
+        are skewed); the number is the raw "fires in X%". The <i>topic-gated</i> count is a
+        separate context signal: how many prompt concepts significantly trigger the feature.
       </Explain>
 
       <div className="flex flex-wrap items-end gap-4">
@@ -96,23 +90,20 @@ export default function GeneralBehaviours({
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-xs uppercase tracking-wider text-slate-400">
-            general / content-bound cut · g = {thr.toFixed(2)}
+            cut · general = top {Math.round((1 - thr) * 100)}% by fire rate
           </span>
           <input
-            type="range" min={0} max={1} step={0.05} value={thr}
+            type="range" min={0} max={0.95} step={0.05} value={thr}
             onChange={(e) => setThr(Number(e.target.value))}
             className="w-64 accent-accent"
           />
         </div>
-        <span className="pb-1 text-[11px] text-slate-500">
-          {rows.length} features with known generality
-          {nLowSupport > 0 ? ` · ${nLowSupport} excluded (too little support to judge)` : ""}
-        </span>
+        <span className="pb-1 text-[11px] text-slate-500">{rows.length} features</span>
       </div>
 
       <GroupCard
         title="General behaviours"
-        hint="fire across many prompt concepts — behaviour, not topic"
+        hint="appear in a large fraction of responses — pervasive, not topic-bound"
         rows={general}
         open={open}
         setOpen={setOpen}
@@ -122,7 +113,7 @@ export default function GeneralBehaviours({
       />
       <GroupCard
         title="Content-bound"
-        hint="concentrated in one / a few prompt concepts — tied to a topic"
+        hint="fire in only a small fraction of responses — niche / tied to a topic"
         rows={bound}
         open={open}
         setOpen={setOpen}
@@ -172,7 +163,7 @@ function GroupCard({
 }
 
 function GenRow({ r, open, onClick }: { r: Row; open: boolean; onClick: () => void }) {
-  const g = r.generality;
+  const firePct = r.generality * 100; // fraction of responses -> %
   const reward = r.delta_win_rate ?? r.win_assoc;
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
@@ -186,13 +177,21 @@ function GenRow({ r, open, onClick }: { r: Row; open: boolean; onClick: () => vo
       <span className="min-w-0 flex-1">
         <ConceptLabel id={r.feature_id} name={r.concept} wrap className="text-sm text-slate-300" />
       </span>
-      <span className="hidden h-2 w-24 shrink-0 overflow-hidden rounded-full bg-edge/50 sm:block">
-        <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.round(g * 100)}%` }} />
+      <span
+        className="hidden h-2 w-24 shrink-0 overflow-hidden rounded-full bg-edge/50 sm:block"
+        title={`percentile ${Math.round(r.pct * 100)} by fire rate`}
+      >
+        <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.round(r.pct * 100)}%` }} />
       </span>
-      <span className="w-14 shrink-0 text-right text-sm tabular-nums text-slate-200">g={g.toFixed(2)}</span>
+      <span
+        className="w-24 shrink-0 text-right text-sm tabular-nums text-slate-200"
+        title="fraction of responses this behaviour appears in (pervasiveness = generality)"
+      >
+        fires {firePct < 1 ? firePct.toFixed(2) : firePct.toFixed(1)}%
+      </span>
       <span
         className="w-24 shrink-0 text-right text-xs tabular-nums text-slate-500"
-        title="prompt concepts that SIGNIFICANTLY trigger this feature (higher = more topic-gated, roughly the opposite of generality)"
+        title="prompt concepts that SIGNIFICANTLY trigger this feature (topic-gatedness)"
       >
         {r.n_prompt_types ?? 0} topic-gated
       </span>

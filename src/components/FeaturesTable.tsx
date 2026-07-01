@@ -40,9 +40,9 @@ export default function FeaturesTable({ features }: { features: Feature[] }) {
           Each row is one axis of difference the SAE found. <b>Concept</b> is its LLM-given name,{" "}
           <b>behavior</b> its higher-level cluster. <b>Fidelity</b> is how strongly an independent LLM
           agrees the concept is really present ("verified" if it passes the check). <b>Win assoc</b> is
-          how much humans reward it. <b>Generality</b> (0–1) is how broadly it fires across prompt
-          concepts — high = a general behaviour ("creates markdown"), low = content-bound ("crypto
-          advice", tied to one topic).
+          how much humans reward it. <b>Generality</b> is pervasiveness — the
+          fraction of responses it fires in; high = a general behaviour that pervades responses
+          ("refuses", "makes a list"), low = niche / content-bound ("American football").
         </Explain>
       </div>
       <div className="overflow-x-auto">

@@ -36,11 +36,10 @@ export interface Feature {
   delta_win_significant?: boolean;
   cluster_id?: number;
   behavior?: string;
-  // prompt-generality: how broadly this response feature fires across prompt concepts
-  // (0 = content-bound, 1 = fires across all). From the elicitation co-occurrence counts.
-  generality?: number | null; // null = below support floor (unknown), NOT content-bound
-  n_prompt_types?: number; // # prompt concepts that significantly elicit it (~inverse of generality)
-  gen_support?: number; // total prompt co-occurrence mass behind `generality`
+  // generality = pervasiveness: fraction of responses this feature fires in (from z_a/z_b).
+  // High = a general behaviour that pervades responses; low = niche / content-bound.
+  generality?: number | null; // null only when the lens has no per-side codes
+  n_prompt_types?: number; // # prompt concepts that significantly elicit it (topic-gatedness)
 }
 
 export interface ModelValidation {

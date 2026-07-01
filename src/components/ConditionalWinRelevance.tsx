@@ -340,9 +340,9 @@ export default function ConditionalWinRelevance({
                         {generality != null && (
                           <span
                             className="shrink-0 rounded bg-slate-600/25 px-1 text-[10px] font-medium text-slate-400"
-                            title={`prompt-generality ${generality.toFixed(2)} (0 = content-bound, 1 = fires across all prompt concepts)${n_prompt_types != null ? `; ${n_prompt_types} prompt types` : ""}`}
+                            title={`pervasiveness: fires in ${(generality * 100).toFixed(1)}% of responses (high = general behaviour, low = niche/content-bound)${n_prompt_types != null ? `; ${n_prompt_types} sig. prompt types` : ""}`}
                           >
-                            g{generality.toFixed(2)}
+                            {(generality * 100).toFixed(generality < 0.01 ? 2 : 0)}%
                           </span>
                         )}
                         {span > 0 && (
@@ -408,7 +408,7 @@ export default function ConditionalWinRelevance({
           significant. {metric === "controlled"
             ? `Colour saturation fixed (±${WINRATE_REF} = full).`
             : "Colour saturation scales to this view's strongest contrast. Raw contrast is NOT length-controlled."}{" "}
-          <b>g</b> = prompt-generality (how broadly the behaviour fires across prompt concepts). Click a cell for details.
+          <b>%</b> = pervasiveness (fraction of responses the behaviour fires in). Click a cell for details.
         </Caveat>
       </Card>
     </div>
