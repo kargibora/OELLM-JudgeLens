@@ -235,10 +235,14 @@ export default function ReportCard({
   const [openFeat, setOpenFeat] = useState<{ fid: number; src: "fire" | "gap" } | null>(null);
   const [promptQuery, setPromptQuery] = useState("");
   const [showAllPrompts, setShowAllPrompts] = useState(false);
-  // per-model example answers — large, fetched lazily when the report tab first mounts
+  // per-model example answers — large (tens of MB), fetched lazily when the report tab
+  // first mounts. Track loading so the drill-in doesn't silently show OTHER models' answers
+  // (the global fallback) while this model's own answers are still streaming in.
   const [exByModel, setExByModel] = useState<ExamplesByModel | null>(null);
+  const [exLoading, setExLoading] = useState(true);
   useEffect(() => {
-    fetchOptional<ExamplesByModel>("examples_by_model.json").then(setExByModel).catch(() => {});
+    fetchOptional<ExamplesByModel>("examples_by_model.json")
+      .then(setExByModel).catch(() => {}).finally(() => setExLoading(false));
   }, []);
 
   // model picker options: search filter + weakest-first (gaps are the point), folded in
@@ -667,6 +671,7 @@ export default function ReportCard({
                   concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
                   examples={examples}
                   mine={exByModel?.[model]?.[String(openFeat.fid)] ?? null}
+                  loading={exLoading}
                   model={model}
                   onClose={() => setOpenFeat(null)}
                 />
@@ -693,6 +698,7 @@ export default function ReportCard({
                   concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
                   examples={examples}
                   mine={exByModel?.[model]?.[String(openFeat.fid)] ?? null}
+                  loading={exLoading}
                   model={model}
                   onClose={() => setOpenFeat(null)}
                 />
@@ -808,6 +814,7 @@ function FeatureExamplesDrill({
   concept,
   examples,
   mine,
+  loading,
   model,
   onClose,
 }: {
@@ -815,6 +822,7 @@ function FeatureExamplesDrill({
   concept: string;
   examples: Examples | null;
   mine: ModelExample[] | null; // this model's OWN answers (examples_by_model), preferred
+  loading?: boolean; // per-model examples file still streaming
   model: string;
   onClose: () => void;
 }) {
@@ -824,6 +832,18 @@ function FeatureExamplesDrill({
 
   // prefer the model's OWN answers; fall back to the global cross-model set (labelled).
   const useMine = !!mine && mine.length > 0;
+  // while the (large) per-model file streams, DON'T flash the cross-model fallback — it
+  // would misattribute another model's text to this one.
+  if (!useMine && loading)
+    return (
+      <div className="mt-3 rounded-xl border border-accent/40 bg-accent/5 p-3">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <h4 className="text-sm font-semibold text-slate-200">{model} answers exhibiting “{concept}”</h4>
+          <button onClick={onClose} className="text-xs text-slate-500 hover:text-slate-300">close</button>
+        </div>
+        <p className="px-1 py-3 text-xs text-slate-500">Loading {model}'s answers…</p>
+      </div>
+    );
   const globalItems = (examples?.[String(fid)] ?? [])
     .map((e) => {
       const aSide = e.z >= 0;
