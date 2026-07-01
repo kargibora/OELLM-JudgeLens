@@ -70,14 +70,18 @@ export default function GeneralBehaviours({
   return (
     <div className="flex flex-col gap-4">
       <Explain>
-        Response features split by <b>generality</b> — how broadly a behaviour fires across
-        distinct prompt concepts. <b>General</b> behaviours ("responds in the user's
-        language", "tells a story") fire regardless of topic; <b>content-bound</b> ones
-        ("crypto investment advice") are tied to one kind of prompt. Generality is the
-        entropy of a feature's prompt co-occurrence mass over the full prompt keyspace (a
-        continuous axis — the cut below is yours to move, not ground truth). The{" "}
-        <i>topic-gated</i> count is roughly the opposite signal: how many prompt concepts
-        significantly trigger the feature.
+        Response features split by <b>generality</b> — how far a feature's firing departs
+        from the base rate of prompt topics. <b>General</b> behaviours ("responds in the
+        user's language", "tells a story") fire like the background, regardless of topic;
+        <b>content-bound</b> ones ("crypto investment advice", "translation") fire
+        disproportionately on specific prompts. Generality is{" "}
+        <span title="1 - KL( P(concept | feature) || P(concept) ) / log K">
+          1 − (topic-selectivity)
+        </span>{" "}
+        — base-rate-corrected, so a feature that just tracks how common each topic is scores
+        high, not one that merely co-occurs with many common topics (a continuous axis — the
+        cut below is yours to move, not ground truth). The <i>topic-gated</i> count is a
+        related signal: how many prompt concepts significantly trigger the feature.
       </Explain>
 
       <div className="flex flex-wrap items-end gap-4">
