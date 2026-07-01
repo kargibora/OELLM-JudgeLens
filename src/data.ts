@@ -42,7 +42,7 @@ export async function loadBundle(): Promise<Bundle> {
   // NOTE: the three UMAP maps (map/prompt_map/response_map, ~tens of MB) are NOT loaded
   // here — they're fetched lazily by useMap() when the Maps tab opens, so startup isn't
   // blocked on the heaviest JSON parses in the app.
-  const [meta, features, validation, diagnosis, examples, delta, bias, promptFeatures, conditional, elicitation, reportBattles] =
+  const [meta, features, validation, diagnosis, examples, delta, bias, promptFeatures, conditional, elicitation, reportBattles, headToHead] =
     await Promise.all([
       getJSON<Bundle["meta"]>("meta.json"),
       getJSON<Bundle["features"]>("features.json"),
@@ -55,6 +55,7 @@ export async function loadBundle(): Promise<Bundle> {
       getJSON<unknown>("conditional.json", true),
       getJSON<Bundle["elicitation"]>("elicitation.json", true),
       getJSON<Bundle["reportBattles"]>("report_battles.json", true),
+      getJSON<Bundle["headToHead"]>("head_to_head.json", true),
     ]);
   return {
     meta: meta!,
@@ -68,6 +69,7 @@ export async function loadBundle(): Promise<Bundle> {
     conditional: wrapKeyspace<ConditionalData>(conditional) as ConditionalBundle | null,
     elicitation: elicitation ?? null,
     reportBattles: reportBattles ?? null,
+    headToHead: headToHead ?? null,
   };
 }
 

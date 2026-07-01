@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle, ArrowRightLeft, BarChart3, ClipboardList, FlaskConical,
-  LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Table2,
+  LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Sparkles, Table2,
 } from "lucide-react";
 import type { Bundle } from "./types";
 import { loadBundle } from "./data";
@@ -16,6 +16,7 @@ import ConditionalWinRelevance from "./components/ConditionalWinRelevance";
 import BiasScreen from "./components/BiasScreen";
 import PromptFeatures from "./components/PromptFeatures";
 import ReportCard from "./components/ReportCard";
+import GeneralBehaviours from "./components/GeneralBehaviours";
 
 // `groupStart` renders a small section label before the tab — used to cluster the
 // three prompt↔response views (which are different statistics, not duplicates).
@@ -24,6 +25,7 @@ const TABS = [
   { id: "features", label: "Features", icon: Table2 },
   { id: "reward", label: "Win relevance", icon: BarChart3 },
   { id: "elicitation", label: "Elicits", icon: ArrowRightLeft, groupStart: "Prompt ↔ Response" },
+  { id: "general", label: "General behaviours", icon: Sparkles },
   { id: "conditional", label: "Wins within prompt type", icon: Split },
   { id: "confound", label: "Confound screen", icon: AlertTriangle, groupStart: " " },
   { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
@@ -106,6 +108,13 @@ export default function App() {
         />
       )}
       {tab === "elicitation" && <Elicitation data={bundle.elicitation} />}
+      {tab === "general" && (
+        <GeneralBehaviours
+          features={bundle.features}
+          elicitation={bundle.elicitation}
+          examples={bundle.examples}
+        />
+      )}
       {tab === "confound" && <BiasScreen bias={bundle.bias} />}
       {tab === "prompts" && <PromptFeatures data={bundle.promptFeatures} />}
       {tab === "validation" && <Validation validation={bundle.validation} />}
@@ -115,6 +124,7 @@ export default function App() {
           features={bundle.features}
           reportBattles={bundle.reportBattles}
           examples={bundle.examples}
+          headToHead={bundle.headToHead}
         />
       )}
       {tab === "maps" && (
