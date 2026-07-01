@@ -12,7 +12,7 @@ import Validation from "./components/Validation";
 import FeatureDetail from "./components/FeatureDetail";
 import MapsTab from "./components/MapsTab";
 import Elicitation from "./components/Elicitation";
-import ConditionalWinRelevance from "./components/ConditionalWinRelevance";
+import PromptBrowser from "./components/PromptBrowser";
 import BiasScreen from "./components/BiasScreen";
 import PromptFeatures from "./components/PromptFeatures";
 import ReportCard from "./components/ReportCard";
@@ -26,7 +26,7 @@ const TABS = [
   { id: "reward", label: "Win relevance", icon: BarChart3 },
   { id: "elicitation", label: "Elicits", icon: ArrowRightLeft, groupStart: "Prompt ↔ Response" },
   { id: "general", label: "General behaviours", icon: Sparkles },
-  { id: "conditional", label: "Wins within prompt type", icon: Split },
+  { id: "prompts-outcome", label: "Prompt browser", icon: Split },
   { id: "confound", label: "Confound screen", icon: AlertTriangle, groupStart: " " },
   { id: "prompts", label: "Prompt concepts", icon: MessageSquare },
   { id: "validation", label: "Validation", icon: ScatterChart },
@@ -99,11 +99,11 @@ export default function App() {
       {tab === "overview" && <Overview bundle={bundle} />}
       {tab === "features" && <FeaturesTable features={bundle.features} />}
       {tab === "reward" && <WinRelevance features={bundle.features} />}
-      {tab === "conditional" && (
-        <ConditionalWinRelevance
+      {tab === "prompts-outcome" && (
+        <PromptBrowser
           conditional={bundle.conditional}
-          delta={bundle.delta}
-          features={bundle.features}
+          elicitation={bundle.elicitation}
+          reportBattles={bundle.reportBattles}
           focus={focusCell}
         />
       )}
@@ -128,7 +128,7 @@ export default function App() {
         />
       )}
       {tab === "maps" && (
-        <MapsTab onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("conditional"); }} />
+        <MapsTab onJump={(pc, cf) => { setFocusCell({ pc, cf }); setTab("prompts-outcome"); }} />
       )}
       {tab === "detail" && <FeatureDetail features={bundle.features} examples={bundle.examples} />}
     </div>

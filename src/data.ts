@@ -73,6 +73,12 @@ export async function loadBundle(): Promise<Bundle> {
   };
 }
 
+// Optional JSON fetched on demand (e.g. examples_by_model.json — large, only needed when
+// the report-card drill-in opens, so it's not loaded at startup). null if absent.
+export async function fetchOptional<T>(name: string): Promise<T | null> {
+  return getJSON<T>(name, true);
+}
+
 // --- lazy map loading -------------------------------------------------------
 // The maps are large and exploratory; fetch + parse each one only when its sub-tab
 // is first opened, and cache the parsed result (re-visits are instant, no re-parse).
