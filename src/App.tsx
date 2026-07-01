@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRightLeft, BarChart3, Boxes, ClipboardList, FlaskConical,
   LayoutDashboard, Map, MessageSquare, ScatterChart, Split, Sparkles, Table2,
@@ -41,8 +41,15 @@ export default function App() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<string>("overview");
-  // cross-tab link: ★ in the prompt-map panel jumps to its Δ cell in the heatmap
+  // cross-tab link: ★ in the maps / a hub row jumps to the matching concept in a hub.
+  // cf/pc are -1 when only the other axis is meaningful (e.g. feature→prompt jump).
   const [focusCell, setFocusCell] = useState<{ pc: number; cf: number } | null>(null);
+  // stable focus objects (identity only changes when the target changes) so a hub's
+  // focus effect fires once per jump instead of every render — and never on the -1 sentinel.
+  const featureFocus = useMemo(
+    () => (focusCell && focusCell.cf >= 0 ? { cf: focusCell.cf } : null), [focusCell]);
+  const promptFocus = useMemo(
+    () => (focusCell && focusCell.pc >= 0 ? { pc: focusCell.pc } : null), [focusCell]);
 
   useEffect(() => {
     loadBundle().then(setBundle).catch((e) => setErr(String(e)));
@@ -107,7 +114,7 @@ export default function App() {
           elicitation={bundle.elicitation}
           conditional={bundle.conditional}
           examples={bundle.examples}
-          focus={focusCell ? { cf: focusCell.cf } : null}
+          focus={featureFocus}
           onJumpPrompt={(pc) => { setFocusCell({ pc, cf: -1 }); setTab("prompts-outcome"); }}
         />
       )}
@@ -116,7 +123,7 @@ export default function App() {
           conditional={bundle.conditional}
           elicitation={bundle.elicitation}
           reportBattles={bundle.reportBattles}
-          focus={focusCell}
+          focus={promptFocus}
         />
       )}
       {tab === "elicitation" && <Elicitation data={bundle.elicitation} />}

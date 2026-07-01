@@ -303,7 +303,6 @@ export interface Bundle {
   validation: ModelValidation[];
   diagnosis: Diagnosis | null;
   examples: Examples | null;
-  delta: DeltaBundle | null;
   bias: BiasRow[] | null;
   promptFeatures: PromptFeatures | null;
   conditional: ConditionalBundle | null;
