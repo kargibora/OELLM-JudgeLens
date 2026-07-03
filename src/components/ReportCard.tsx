@@ -10,10 +10,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Diagnosis, Examples, ExamplesByModel, Feature, HeadToHead, ModelExample, ReportBattles } from "../types";
-import { Card, Explain, Metric, conceptLabel, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
-import { fetchOptional, pct } from "../data";
-import { H2HIndex, type H2HCell } from "../h2h";
+import type { Diagnosis, Example, ExamplesByModel, Feature, HeadToHead, ModelExample, ReportBattles } from "../types";
+import { Card, Explain, Metric, Segmented, SkeletonList, conceptLabel, divergeColor, fireDivergeColor, WINRATE_REF } from "./ui";
+import { fetchOptional, pct, useFeatureExamples } from "../data";
+import { H2HIndex, bhAdjust, poolContrastP, type H2HCell } from "../h2h";
 import GapQuadrant, { type QuadrantPoint } from "./GapQuadrant";
 
 type FireMode = "freq" | "paired" | "model";
@@ -213,14 +213,16 @@ export default function ReportCard({
   diagnosis,
   features,
   reportBattles,
-  examples,
   headToHead,
+  hasLabels = true,
+  onJumpFeature,
 }: {
   diagnosis: Diagnosis | null;
   features: Feature[];
   reportBattles: ReportBattles | null;
-  examples: Examples | null;
   headToHead: HeadToHead | null;
+  hasLabels?: boolean;
+  onJumpFeature?: (cf: number) => void;
 }) {
   const [model, setModel] = useState(diagnosis?.models?.[0] ?? "");
   const [openPrompt, setOpenPrompt] = useState<string | null>(null);
@@ -233,6 +235,9 @@ export default function ReportCard({
   // a clicked feature bar opens example answers for that feature; `src` keeps the drill-in
   // next to where it was clicked (fire panel vs gap panel).
   const [openFeat, setOpenFeat] = useState<{ fid: number; src: "fire" | "gap" } | null>(null);
+  // lazy per-feature examples shard for whichever feature bar is drilled open (cross-model
+  // fallback when this model has none of its own answers firing the feature).
+  const drillExamples = useFeatureExamples(openFeat?.fid ?? null);
   const [promptQuery, setPromptQuery] = useState("");
   const [showAllPrompts, setShowAllPrompts] = useState(false);
   // per-model example answers — large (tens of MB), fetched lazily when the report tab
@@ -251,13 +256,21 @@ export default function ReportCard({
     () =>
       (diagnosis?.models ?? [])
         .filter((m) => m.toLowerCase().includes(query.toLowerCase()))
-        .sort((a, b) => (diagnosis?.rows[a]?.win_rate ?? 0) - (diagnosis?.rows[b]?.win_rate ?? 0)),
-    [diagnosis, query]
+        .sort((a, b) => (hasLabels
+          ? (diagnosis?.rows[a]?.win_rate ?? 0) - (diagnosis?.rows[b]?.win_rate ?? 0)
+          : a.localeCompare(b))),
+    [diagnosis, query, hasLabels]
   );
 
   const featureById = useMemo(() => {
     const m: Record<number, Feature> = {};
     for (const f of features) m[f.feature_id] = f;
+    return m;
+  }, [features]);
+  // response-concept NAME -> feature id (relations rows carry names, not ids)
+  const fidByConcept = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of features) if (f.concept && !m.has(f.concept)) m.set(f.concept, f.feature_id);
     return m;
   }, [features]);
 
@@ -308,21 +321,40 @@ export default function ReportCard({
   const named = useMemo(() => view.filter((v) => v.concept && v.concept.trim() !== ""), [view]);
   const hasFire = !!row?.fire_rate;
 
+  // Significance for the DEFAULT pool-contrast view: model-vs-pool z-test per feature from
+  // the raw counts + BH across features — the same footing the h2h view already has.
+  // null when the bundle predates fire_pos/fire_neg (then effects render un-gated, as before).
+  const poolQ = useMemo(() => {
+    if (!row?.fire_pos || !row?.fire_neg || !diagnosis?.tot_pos || !diagnosis?.tot_neg || !diagnosis?.n_total)
+      return null;
+    const ps = diagnosis.features.map((_, i) =>
+      poolContrastP(row.fire_pos![i], row.fire_neg![i], row.n_battles,
+                    diagnosis.tot_pos![i], diagnosis.tot_neg![i], diagnosis.n_total!));
+    return bhAdjust(ps);
+  }, [row, diagnosis]);
+  const poolSigAt = (idx: number): boolean | null => (poolQ ? poolQ[idx] < 0.05 : null);
+  // washed-out variant of an rgba() bar color for non-significant effects
+  const dimColor = (c: string) => c.replace(/,\s*([0-9.]+)\)$/, ", 0.22)");
+
   // points for the folded-in Gap quadrant scatter (delta_vs_pool × reward); all features
   const quadrantPoints: QuadrantPoint[] = useMemo(() => {
     const behaviorOf = (i: number) =>
       diagnosis?.clusters && diagnosis?.behaviors
         ? diagnosis.behaviors[String(diagnosis.clusters[i])] ?? ""
         : "";
-    return view.map((v) => ({
-      fid: v.fid,
-      concept: conceptLabel(v.fid, v.concept),
-      behavior: behaviorOf(v.idx),
-      delta: v.under ?? 0,
-      win: v.reward ?? 0,
-      gap: (v.under ?? 0) < 0 && (v.reward ?? 0) > 0,
-    }));
-  }, [view, diagnosis]);
+    return view.map((v) => {
+      const f = featureById[v.fid];
+      return {
+        fid: v.fid,
+        concept: conceptLabel(v.fid, v.concept),
+        behavior: behaviorOf(v.idx),
+        delta: v.under ?? 0,
+        win: v.reward ?? 0,
+        gap: (v.under ?? 0) < 0 && (v.reward ?? 0) > 0,
+        sig: f?.delta_win_significant ?? f?.win_significant ?? false,
+      };
+    });
+  }, [view, diagnosis, featureById]);
 
   const fired = useMemo(() => named.filter((v) => v.fire != null), [named]);
   // per-feature display value for the current fire mode:
@@ -432,15 +464,19 @@ export default function ReportCard({
     rows.map((v) => {
       if (fireMode === "freq")
         return { label: clip(v.concept), full: v.concept, v: v.fire ?? 0, color: FIRE_COLOR, tip: "fires in", fid: v.fid };
-      if (fireMode === "paired")
+      if (fireMode === "paired") {
+        const sig = poolSigAt(v.idx);
+        const base = fireDivergeColor(v.val, pairedRef);
         return {
           label: clip(v.concept),
           full: v.concept,
           v: v.val,
-          color: fireDivergeColor(v.val, pairedRef),
-          tip: `Δ vs other models, same prompt · fires ${pct(v.fire, 0)}`,
+          color: sig === false ? dimColor(base) : base,
+          tip: `Δ vs other models, same prompt (relative activation, not pp) · fires ${pct(v.fire, 0)}` +
+            (sig === false ? " · not significant (q≥0.05)" : sig === true ? " · significant (BH q<0.05)" : ""),
           fid: v.fid,
         };
+      }
       return {
         label: clip(v.concept),
         full: v.concept,
@@ -461,12 +497,12 @@ export default function ReportCard({
     fireMode === "freq" ? "Does a lot"
     : fireMode === "paired" ? "Expresses more (vs other models)"
     : usingH2H ? `Does more than ${cmpModel} · same ${h2hN} battles`
-    : `More than ${cmpModel ?? "—"} (pooled)`;
+    : `More than ${cmpModel ?? "—"} — pooled, NOT prompt-matched`;
   const lessTitle =
     fireMode === "freq" ? "Does rarely"
     : fireMode === "paired" ? "Expresses less (vs other models)"
     : usingH2H ? `Does less than ${cmpModel} · same ${h2hN} battles`
-    : `Less than ${cmpModel ?? "—"} (pooled)`;
+    : `Less than ${cmpModel ?? "—"} — pooled, NOT prompt-matched`;
   const moreHint =
     fireMode === "freq" ? "highest activation rate across this model's battles"
     : fireMode === "paired" ? "expresses more than other models do, comparing answers to the same prompt"
@@ -477,14 +513,19 @@ export default function ReportCard({
     : fireMode === "paired" ? "expresses less than other models do, on the same prompt"
     : usingH2H ? "prompt-matched: this model's answer shows this less than the opponent's, on their shared battles"
     : "fires less often across each model's own battles (pooled — not shared-battle)";
-  const gapBars: BarRow[] = rewardedGaps.map((v) => ({
-    label: clip(v.concept),
-    full: v.concept,
-    v: v.reward ?? 0,
-    color: divergeColor(v.reward ?? 0, WINRATE_REF),
-    tip: `Δwin (length-controlled) · ${(v.under ?? 0).toFixed(2)} vs pool`,
-    fid: v.fid,
-  }));
+  const gapBars: BarRow[] = rewardedGaps.map((v) => {
+    const f = featureById[v.fid];
+    const rsig = f?.delta_win_significant ?? f?.win_significant ?? false;
+    const base = divergeColor(v.reward ?? 0, WINRATE_REF);
+    return {
+      label: clip(v.concept),
+      full: v.concept,
+      v: v.reward ?? 0,
+      color: rsig ? base : dimColor(base),
+      tip: `Δwin (length-controlled)${rsig ? "" : " — not significant"} · ${(v.under ?? 0).toFixed(2)} vs pool`,
+      fid: v.fid,
+    };
+  });
   const relationBars: BarRow[] = relations.map((r) => {
     const full = `${r.prompt_concept} ⇒ ${r.response_concept}`;
     return { label: clip(full, 56), full, v: r.delta_win, color: divergeColor(r.delta_win, WINRATE_REF), tip: `Δwin · n=${r.n}` };
@@ -527,17 +568,31 @@ export default function ReportCard({
           onClick={() => togglePrompt(p.concept)}
           drillable={battlesFor(p.concept).length > 0}
         />
-        {openPrompt === p.concept && <BattleDrill battles={battlesFor(p.concept)} model={model} />}
+        {openPrompt === p.concept && (
+          <>
+            <PromptTypeWhy
+              relations={row?.relations ?? []}
+              concept={p.concept}
+              fidByConcept={fidByConcept}
+              onJumpFeature={onJumpFeature}
+            />
+            <BattleDrill battles={battlesFor(p.concept)} model={model} />
+          </>
+        )}
       </div>
     ));
 
   return (
     <div className="flex flex-col gap-4">
       <Explain>
-        A per-model <b>report card</b>: what this model <i>does a lot</i> / <i>rarely</i>, the
-        rewarded behaviours it <i>under-expresses</i> (gaps worth closing), the prompt types it's
-        strongest / weakest on (<i>click one to see its battles</i>), and — for this model — which
-        prompt concepts elicit which response concepts and whether that <i>helps it win</i>.
+        A per-model <b>report card</b>: what this model <i>does a lot</i> / <i>rarely</i>
+        {hasLabels ? (
+          <>, the rewarded behaviours it <i>under-expresses</i> (gaps worth closing), the prompt
+          types it's strongest / weakest on (<i>click one to see its battles</i>), and — for this
+          model — which prompt concepts elicit which response concepts and whether that <i>helps it win</i>.</>
+        ) : (
+          <> — the behaviours it expresses more or less than other models on the same prompts.</>
+        )}
       </Explain>
 
       <div className="flex flex-wrap items-end gap-4">
@@ -552,7 +607,7 @@ export default function ReportCard({
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-xs uppercase tracking-wider text-slate-400">
-            model ({filteredModels.length}, weakest first)
+            model ({filteredModels.length}{hasLabels ? ", weakest first" : ""})
           </span>
           <select
             value={model}
@@ -561,7 +616,7 @@ export default function ReportCard({
           >
             {filteredModels.map((m) => (
               <option key={m} value={m}>
-                {m} · {pct(diagnosis.rows[m]?.win_rate, 0)}
+                {m}{hasLabels ? ` · ${pct(diagnosis.rows[m]?.win_rate, 0)}` : ""}
               </option>
             ))}
           </select>
@@ -574,11 +629,11 @@ export default function ReportCard({
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Metric label="model" value={<span className="text-base">{model}</span>} />
-            <Metric label="win rate" value={pct(row.win_rate, 0)} />
+            {hasLabels && <Metric label="win rate" value={pct(row.win_rate, 0)} />}
             <Metric label="battles" value={row.n_battles.toLocaleString()} />
           </div>
 
-          {!hasFire && (
+          {hasLabels && !hasFire && (
             <Card>
               <p className="text-sm text-amber-400">
                 The behavioural fingerprint isn't available for this dataset — showing rewarded gaps only.
@@ -589,24 +644,12 @@ export default function ReportCard({
           {hasFire && (
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-3">
-                <div className="inline-flex rounded-lg border border-edge p-0.5">
-                  {(["freq", "paired", "model"] as FireMode[]).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setFireMode(m)}
-                      title={
-                        m === "freq" ? "how often each behaviour appears in this model's answers"
-                        : m === "paired" ? "expresses more/less than other models, comparing answers to the SAME prompt (prompt-controlled)"
-                        : "head-to-head vs a chosen model on the battles they fought each other (prompt-matched, McNemar-tested); falls back to a pooled fire-rate diff when no shared-battle data"
-                      }
-                      className={`rounded-md px-2.5 py-1 text-xs transition ${
-                        fireMode === m ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      {m === "freq" ? "Frequency" : m === "paired" ? "Distinctive (same prompt)" : "vs model"}
-                    </button>
-                  ))}
-                </div>
+                <Segmented value={fireMode} onChange={(m) => setFireMode(m)}
+                  options={[
+                    { value: "freq", label: "Frequency", title: "how often each behaviour appears in this model's answers" },
+                    { value: "paired", label: "Distinctive (same prompt)", title: "expresses more/less than other models, comparing answers to the SAME prompt (prompt-controlled)" },
+                    { value: "model", label: "vs model", title: "head-to-head vs a chosen model on the battles they fought each other (prompt-matched, McNemar-tested); falls back to a pooled fire-rate diff when no shared-battle data" },
+                  ] as { value: FireMode; label: string; title: string }[]} />
                 {fireMode === "model" && (
                   <select
                     value={cmpModel ?? ""}
@@ -617,7 +660,7 @@ export default function ReportCard({
                       .filter((m) => m !== model)
                       .map((m) => (
                         <option key={m} value={m}>
-                          {m} · {pct(diagnosis.rows[m]?.win_rate, 0)}
+                          {m}{hasLabels ? ` · ${pct(diagnosis.rows[m]?.win_rate, 0)}` : ""}
                         </option>
                       ))}
                   </select>
@@ -632,7 +675,7 @@ export default function ReportCard({
                 {relMode && (
                   <span className="text-[11px] text-slate-500">
                     <span style={{ color: "rgb(96,165,250)" }}>blue</span> = more ·{" "}
-                    <span style={{ color: "rgb(251,191,36)" }}>amber</span> = less
+                    <span style={{ color: "rgb(148,163,184)" }}>grey</span> = less
                     {fireMode === "paired"
                       ? " · prompt-controlled (same-prompt contrast)"
                       : usingH2H
@@ -667,9 +710,8 @@ export default function ReportCard({
               </div>
               {openFeat?.src === "fire" && (
                 <FeatureExamplesDrill
-                  fid={openFeat.fid}
                   concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
-                  examples={examples}
+                  examples={drillExamples}
                   mine={exByModel?.[model]?.[String(openFeat.fid)] ?? null}
                   loading={exLoading}
                   model={model}
@@ -679,6 +721,7 @@ export default function ReportCard({
             </div>
           )}
 
+          {hasLabels && (<>
           <Section
             title="Rewarded gaps"
             hint="behaviours this model under-expresses that humans reward (length-controlled Δwin-rate) — i.e. doing more of them tends to win, but it currently does them less than the model pool. Gaps worth closing."
@@ -694,9 +737,8 @@ export default function ReportCard({
             {openFeat?.src === "gap" && (
               <div className="mt-3">
                 <FeatureExamplesDrill
-                  fid={openFeat.fid}
                   concept={conceptLabel(openFeat.fid, featureById[openFeat.fid]?.concept ?? "")}
-                  examples={examples}
+                  examples={drillExamples}
                   mine={exByModel?.[model]?.[String(openFeat.fid)] ?? null}
                   loading={exLoading}
                   model={model}
@@ -798,6 +840,7 @@ export default function ReportCard({
               />
             )}
           </Section>
+          </>)}
         </>
       )}
     </div>
@@ -810,7 +853,6 @@ export default function ReportCard({
 // surfaced first; if the sampled top-activating examples include none from this model, we
 // fall back to the global strongest (honestly labelled).
 function FeatureExamplesDrill({
-  fid,
   concept,
   examples,
   mine,
@@ -818,9 +860,8 @@ function FeatureExamplesDrill({
   model,
   onClose,
 }: {
-  fid: number;
   concept: string;
-  examples: Examples | null;
+  examples: Example[] | null | undefined; // this feature's shard (cross-model fallback)
   mine: ModelExample[] | null; // this model's OWN answers (examples_by_model), preferred
   loading?: boolean; // per-model examples file still streaming
   model: string;
@@ -841,10 +882,10 @@ function FeatureExamplesDrill({
           <h4 className="text-sm font-semibold text-slate-200">{model} answers exhibiting “{concept}”</h4>
           <button onClick={onClose} className="text-xs text-slate-500 hover:text-slate-300">close</button>
         </div>
-        <p className="px-1 py-3 text-xs text-slate-500">Loading {model}'s answers…</p>
+        <SkeletonList n={2} itemClass="h-20" />
       </div>
     );
-  const globalItems = (examples?.[String(fid)] ?? [])
+  const globalItems = (examples ?? [])
     .map((e) => {
       const aSide = e.z >= 0;
       return { z: e.z, prompt: e.prompt, exModel: aSide ? e.model_a : e.model_b,
@@ -905,6 +946,51 @@ function FeatureExamplesDrill({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// The missing "why" between a weak prompt type and raw transcripts: this model's
+// prompt->response Δwin edges restricted to THAT prompt type — which behaviours pay off
+// (or cost) specifically here. Click a row to open the behaviour in the Feature panel.
+function PromptTypeWhy({
+  relations, concept, fidByConcept, onJumpFeature,
+}: {
+  relations: { prompt_concept: string; response_concept: string; delta_win: number; n: number }[];
+  concept: string;
+  fidByConcept: Map<string, number>;
+  onJumpFeature?: (cf: number) => void;
+}) {
+  const rows = relations
+    .filter((r) => r.prompt_concept === concept)
+    .sort((a, b) => Math.abs(b.delta_win) - Math.abs(a.delta_win))
+    .slice(0, 8);
+  if (rows.length === 0) return null;
+  const maxD = Math.max(0.02, ...rows.map((r) => Math.abs(r.delta_win)));
+  return (
+    <div className="mb-1 ml-6 mt-1 rounded-lg border border-edge/60 bg-ink/40 p-2">
+      <p className="mb-1 text-[11px] text-slate-500">
+        What moves the outcome on this prompt type (Δwin when the behaviour fires vs not):
+      </p>
+      {rows.map((r, i) => {
+        const fid = fidByConcept.get(r.response_concept);
+        const jump = fid != null && onJumpFeature ? () => onJumpFeature(fid) : undefined;
+        return (
+          <button key={i} onClick={jump} disabled={!jump}
+            title={`Δwin ${r.delta_win >= 0 ? "+" : ""}${(r.delta_win * 100).toFixed(1)}pp · n=${r.n}${jump ? " · open in Feature panel" : ""}`}
+            className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs transition-colors duration-150 ${
+              jump ? "hover:bg-edge/30" : "cursor-default"}`}>
+            <span className="min-w-0 flex-1 truncate text-slate-300">{r.response_concept}</span>
+            <span className="hidden h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-edge/40 sm:block">
+              <span className="block h-full rounded-full"
+                style={{ width: `${Math.round((Math.abs(r.delta_win) / maxD) * 100)}%`, background: divergeColor(r.delta_win, WINRATE_REF) }} />
+            </span>
+            <span className="w-12 shrink-0 text-right tabular-nums text-slate-400">
+              {r.delta_win >= 0 ? "+" : ""}{Math.round(r.delta_win * 100)}pp
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

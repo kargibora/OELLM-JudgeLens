@@ -16,7 +16,7 @@ const HEIGHT = 560;
 type Mode = "behavior" | "feature";
 
 export default function PromptMapView(
-  { map, onJump }: { map: PromptMapData | null; onJump?: (pc: number, cf: number) => void }
+  { map, onJump, hasLabels = true }: { map: PromptMapData | null; onJump?: (pc: number, cf: number) => void; hasLabels?: boolean }
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -157,10 +157,14 @@ export default function PromptMapView(
       <Explain>
         Each dot is one battle, placed by UMAP of its <b>prompt</b> latents — prompts that ask for
         similar things sit together. <b>Colour</b> = the dominant prompt behaviour. <b>Click a dot</b>
-        {" "}to read the prompt and see which prompt features fire and which features the{" "}
-        <i>winning</i> response expresses — <span className="text-good">★ marks the ones that are
-        statistically significant in the Δ relation</span>, so you can verify a concept on a real
-        example.
+        {" "}to read the prompt and see which prompt features fire{hasLabels ? (
+          <> and which features the <i>winning</i> response expresses — <span className="text-good">★
+          marks the ones that are statistically significant in the Δ relation</span>, so you can
+          verify a concept on a real example.</>
+        ) : (
+          <> and how the two responses differ in feature space (this dataset has no preference
+          labels, so there is no winner).</>
+        )}
       </Explain>
       <Card>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -228,8 +232,12 @@ export default function PromptMapView(
               </div>
               <div className="text-xs text-slate-500">
                 {picked.ma} <span className="text-slate-600">vs</span> {picked.mb}
-                {" · "}
-                <span className="text-good">winner: {picked.win === "A" ? picked.ma : picked.mb}</span>
+                {hasLabels && (
+                  <>
+                    {" · "}
+                    <span className="text-good">winner: {picked.win === "A" ? picked.ma : picked.mb}</span>
+                  </>
+                )}
               </div>
             </div>
             <button onClick={() => setPicked(null)} className="text-xs text-accent hover:underline">
@@ -255,7 +263,7 @@ export default function PromptMapView(
             </div>
             <div className="rounded-lg border border-edge bg-ink/60 p-2 text-sm">
               <div className="mb-1 text-xs uppercase tracking-wider text-slate-500">
-                completion features (winner vs loser)
+                {hasLabels ? "completion features (winner vs loser)" : "completion features (A vs B contrast)"}
               </div>
               {picked.cf.length === 0 && <div className="text-slate-500">—</div>}
               {picked.cf.map((f) => {
@@ -282,8 +290,14 @@ export default function PromptMapView(
                 );
               })}
               <div className="mt-1 text-[10px] text-slate-600">
-                <span className="text-good">+ winner</span> / <span className="text-bad">− loser</span>{" "}
-                shows it more · ★ = significant (click to jump)
+                {hasLabels ? (
+                  <>
+                    <span className="text-good">+ winner</span> / <span className="text-bad">− loser</span>{" "}
+                    shows it more · ★ = significant (click to jump)
+                  </>
+                ) : (
+                  <>+ = A shows it more / − = B shows it more</>
+                )}
               </div>
             </div>
           </div>
@@ -295,12 +309,12 @@ export default function PromptMapView(
                 <div
                   key={slot}
                   className={`rounded-lg border bg-ink/60 p-2 text-sm ${
-                    picked.win === slot ? "border-good/60" : "border-edge"
+                    hasLabels && picked.win === slot ? "border-good/60" : "border-edge"
                   }`}
                 >
                   <div className="mb-1 text-xs uppercase tracking-wider text-slate-500">
                     {slot} — {model}
-                    {picked.win === slot && <span className="text-good"> · winner</span>}
+                    {hasLabels && picked.win === slot && <span className="text-good"> · winner</span>}
                   </div>
                   <div className="max-h-80 overflow-auto whitespace-pre-wrap text-slate-300">
                     {text || "(no response text)"}

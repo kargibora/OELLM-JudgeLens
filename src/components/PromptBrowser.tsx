@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type { ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
-import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, clip, divergeColor, WINRATE_REF } from "./ui";
+import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, Segmented, clip, divergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
 
 // Prompt-first browser: pick a prompt concept and read, on one page, what responses it
@@ -16,6 +16,7 @@ export default function PromptBrowser({
   elicitation,
   reportBattles,
   promptFeatures,
+  hasLabels = true,
   focus,
   onJumpFeature,
 }: {
@@ -23,6 +24,7 @@ export default function PromptBrowser({
   elicitation: ElicitationData | null;
   reportBattles: ReportBattles | null;
   promptFeatures: PromptFeatures | null;
+  hasLabels?: boolean;
   focus?: { pc: number } | null;
   onJumpFeature?: (cf: number) => void;
 }) {
@@ -35,7 +37,9 @@ export default function PromptBrowser({
     return m;
   }, [promptFeatures]);
   const [query, setQuery] = useState("");
-  const [sortBy, setSortBy] = useState<"n" | "effect">("effect");
+  // no labels → no within-prompt Δwin, so "most win-differentiating" is meaningless; sort by frequency.
+  const [sortBy, setSortBy] = useState<"n" | "effect">(hasLabels ? "effect" : "n");
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
 
   // prompt-concept list, with battle count n and the strongest within-type Δwin (effect)
@@ -54,8 +58,9 @@ export default function PromptBrowser({
     const q = query.trim().toLowerCase();
     return concepts
       .filter((p) => !q || conceptLabel(p.id, p.name).toLowerCase().includes(q))
+      .filter((p) => !verifiedOnly || pmeta.get(p.id)?.verified)
       .sort((a, b) => (sortBy === "n" ? b.n - a.n : b.maxAbsDelta - a.maxAbsDelta || b.n - a.n));
-  }, [concepts, query, sortBy]);
+  }, [concepts, query, sortBy, verifiedOnly, pmeta]);
 
   // default / cross-tab focus selection
   const handledFocus = useRef<unknown>(null);
@@ -82,15 +87,17 @@ export default function PromptBrowser({
     <div className="flex flex-col gap-4">
       <Explain>
         Browse by <b>prompt concept</b>: pick one on the left to see, for that kind of
-        prompt, which response behaviours it tends to <b>elicit</b> (co-activation) and which
+        prompt, which response behaviours it tends to <b>elicit</b> (co-activation){hasLabels && <> and which
         of them actually <b>help win</b> it (length-controlled Δwin-rate within this prompt
-        type), plus example prompts and their outcomes. In short — "when users ask this, what
-        do models produce, and what wins?"
+        type)</>}, plus example prompts{hasLabels && " and their outcomes"}. In short — "when users ask this, what
+        do models produce{hasLabels ? ", and what wins?" : "?"}"
       </Explain>
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         {/* prompt-concept list */}
+        <div className="relative">
         <Card className="max-h-[70vh] overflow-y-auto">
+          <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-1 border-b border-edge/60 bg-panel/95 px-4 pb-2 pt-4 backdrop-blur">
           <div className="mb-2 flex items-center gap-2">
             <Search size={14} className="text-slate-500" />
             <input
@@ -100,17 +107,18 @@ export default function PromptBrowser({
               className="w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-sm placeholder:text-slate-600"
             />
           </div>
-          <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-500">
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-400">
             sort:
-            {(["effect", "n"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSortBy(s)}
-                className={`rounded px-1.5 py-0.5 ${sortBy === s ? "bg-accent text-white" : "hover:text-slate-200"}`}
-              >
-                {s === "effect" ? "most win-differentiating" : "most frequent"}
-              </button>
-            ))}
+            <Segmented size="xs" value={sortBy} onChange={(v) => setSortBy(v)}
+              options={(hasLabels
+                ? [{ value: "effect", label: "most win-differentiating" }, { value: "n", label: "most frequent" }]
+                : [{ value: "n", label: "most frequent" }]) as { value: "n" | "effect"; label: string }[]} />
+          </div>
+          <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="accent-accent" />
+            verified only
+            <span className="text-slate-600">— ✓ = label confirmed on held-out prompts; · = not confirmed</span>
+          </label>
           </div>
           <div className="flex flex-col">
             {filtered.map((p) => {
@@ -141,6 +149,8 @@ export default function PromptBrowser({
             )}
           </div>
         </Card>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-2xl bg-gradient-to-t from-panel to-transparent" />
+        </div>
 
         {/* detail for the selected prompt concept */}
         {sel == null ? (
@@ -148,15 +158,18 @@ export default function PromptBrowser({
         ) : (
           <div className="flex flex-col gap-4">
             <Card>
-              <h3 className="text-sm font-semibold text-slate-200">
+              <h3 className="text-lg font-semibold leading-snug text-slate-100">
                 <ConceptLabel id={sel} name={selName} wrap />
+                <span className="ml-2 whitespace-nowrap rounded bg-edge/60 px-1.5 py-0.5 align-middle font-mono text-[10px] font-normal text-slate-500">
+                  p{sel}
+                </span>
               </h3>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                what this prompt tends to produce, and what wins it
+              <p className="mt-0.5 text-xs text-slate-500">
+                what this prompt tends to produce{hasLabels ? ", and what wins it" : ""}
               </p>
             </Card>
             <ElicitsPanel elicitation={elicitation} pc={sel} onJumpFeature={onJumpFeature} />
-            <WinsPanel cond={cond} pc={sel} onJumpFeature={onJumpFeature} />
+            {hasLabels && <WinsPanel cond={cond} pc={sel} onJumpFeature={onJumpFeature} />}
             {/* report_battles keys concepts by their raw name (bare id string when unnamed),
                 NOT the "feature N" display label — match that, else examples never join. */}
             <ExamplesPanel reportBattles={reportBattles} conceptName={selName ?? String(sel)} />
@@ -203,7 +216,8 @@ function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; 
     const cells = cond.cells.filter((c) => c.pc === pc)
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 14);
     const maxD = Math.max(0.02, ...cells.map((c) => Math.abs(c.delta)));
-    return cells.map((c) => ({ id: c.f, name: nameOf.get(c.f) ?? null, delta: c.delta, sig: c.sig, w: Math.abs(c.delta) / maxD }));
+    return cells.map((c) => ({ id: c.f, name: nameOf.get(c.f) ?? null, delta: c.delta, sig: c.sig,
+      nf: c.nf ?? null, n: c.n ?? null, w: Math.abs(c.delta) / maxD }));
   }, [cond, pc]);
   return (
     <Card>
@@ -220,7 +234,8 @@ function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; 
         rows.map((r) => (
           <ConceptBarRow key={r.id} id={r.id} name={r.name}
             value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
-            title={`Δwin ${r.delta >= 0 ? "+" : ""}${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}`}
+            title={`Δwin ${r.delta >= 0 ? "+" : ""}${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}${
+              r.nf != null ? ` · fires in ${r.nf} of ${r.n ?? "?"} battles of this type` : r.n != null ? ` · n=${r.n}` : ""}`}
             width={r.w} color={divergeColor(r.delta, WINRATE_REF)} dim={!r.sig}
             onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
         ))
@@ -230,14 +245,16 @@ function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; 
 }
 
 function ExamplesPanel({ reportBattles, conceptName }: { reportBattles: ReportBattles | null; conceptName: string }) {
-  const ex = useMemo(() => {
-    if (!reportBattles) return [];
-    const out: { prompt: string; self: string; other: string; outcome: string; model: string }[] = [];
-    for (const [model, byConcept] of Object.entries(reportBattles)) {
-      for (const b of byConcept[conceptName] ?? []) out.push({ ...b, model });
-      if (out.length >= 20) break;
-    }
-    return out.slice(0, 5);
+  const [ex, nAll] = useMemo(() => {
+    if (!reportBattles) return [[], 0] as const;
+    // gather across ALL models, then take a deterministic spread — object-key order
+    // systematically over-sampled whichever models serialize first.
+    const all: { prompt: string; self: string; other: string; outcome: string; model: string }[] = [];
+    for (const [model, byConcept] of Object.entries(reportBattles))
+      for (const b of byConcept[conceptName] ?? []) all.push({ ...b, model });
+    const k = Math.min(5, all.length);
+    const picked = k === 0 ? [] : Array.from({ length: k }, (_, i) => all[Math.floor((i * all.length) / k)]);
+    return [picked, all.length] as const;
   }, [reportBattles, conceptName]);
   if (!reportBattles) return null; // examples not in this bundle at all — nothing to promise
   const tone = (o: string) => (o === "win" ? "text-good" : o === "loss" ? "text-bad" : "text-slate-400");
@@ -250,7 +267,9 @@ function ExamplesPanel({ reportBattles, conceptName }: { reportBattles: ReportBa
     );
   return (
     <Card>
-      <h4 className="text-sm font-semibold text-slate-200">Example prompts</h4>
+      <h4 className="text-sm font-semibold text-slate-200">
+        Example prompts <span className="font-normal text-slate-500">— {ex.length} of {nAll}, spread across models</span>
+      </h4>
       <div className="mt-2 flex flex-col gap-2">
         {ex.map((b, i) => (
           <div key={i} className="rounded-lg border border-edge bg-ink/40 p-2 text-xs">

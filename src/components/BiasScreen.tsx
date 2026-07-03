@@ -12,7 +12,7 @@ import {
   ZAxis,
 } from "recharts";
 import type { BiasRow } from "../types";
-import { Card, Explain } from "./ui";
+import { Card, ConceptBarRow, Explain } from "./ui";
 
 const CONFOUND = "#f59e0b";
 const ACCENT = "#6366f1";
@@ -75,32 +75,39 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
         <div className="mb-4">
           <h3 className="mb-1 text-sm font-semibold text-slate-200">Does the reward survive length control?</h3>
           <div className="flex flex-col">
-            {rewarded.map((d) => (
-              <div key={d.feature_id} className="flex items-center gap-3 rounded px-2 py-1 text-xs hover:bg-edge/20">
-                <span className="min-w-0 flex-1 truncate text-slate-300" title={d.concept ?? `feature ${d.feature_id}`}>
-                  {d.concept ?? `feature ${d.feature_id}`}
-                </span>
-                <span className="w-40 shrink-0 text-right tabular-nums text-slate-500">
-                  reward {d.win_assoc?.toFixed(2) ?? "—"} → after length {d.correlation_resid_len?.toFixed(2) ?? "—"}
-                </span>
-                <span className={`w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-[11px] font-medium ${
-                  d.confound_entangled ? "bg-amber-500/15 text-amber-400" : "bg-good/15 text-good"}`}>
-                  {d.confound_entangled ? "length-driven" : "survives"}
-                </span>
-              </div>
-            ))}
+            {rewarded.map((d) => {
+              const maxW = Math.max(0.02, ...rewarded.map((r) => Math.abs(r.win_assoc ?? 0)));
+              return (
+                <div key={d.feature_id} className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <ConceptBarRow id={d.feature_id} name={d.concept}
+                      value={`${d.win_assoc?.toFixed(2) ?? "—"} → ${d.correlation_resid_len?.toFixed(2) ?? "—"}`}
+                      title={`raw reward ${d.win_assoc?.toFixed(3) ?? "—"} → after length control ${d.correlation_resid_len?.toFixed(3) ?? "—"}`}
+                      width={Math.abs(d.win_assoc ?? 0) / maxW}
+                      color={d.confound_entangled ? "rgba(251,191,36,0.8)" : "rgba(52,211,153,0.8)"}
+                      dim={!d.fidelity_pass} />
+                  </div>
+                  <span className={`w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-[11px] font-medium ${
+                    d.confound_entangled ? "bg-amber-500/15 text-amber-400" : "bg-good/15 text-good"}`}>
+                    {d.confound_entangled ? "length-driven" : "survives"}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
       <ResponsiveContainer width="100%" height={460}>
         <ScatterChart margin={{ left: 8, right: 24, top: 8, bottom: 24 }}>
-          <CartesianGrid stroke="#1f2937" />
+          <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" vertical={false} />
           <XAxis
             type="number"
             dataKey="win_assoc"
             name="win assoc"
             stroke="#64748b"
             fontSize={12}
+            tickLine={false}
+            axisLine={false}
             label={{ value: "win association →", position: "bottom", fill: "#64748b", fontSize: 12 }}
           />
           <YAxis
@@ -109,6 +116,8 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
             name="length covariance"
             stroke="#64748b"
             fontSize={12}
+            tickLine={false}
+            axisLine={false}
             label={{
               value: "length covariance →",
               angle: -90,

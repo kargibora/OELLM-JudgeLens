@@ -9,9 +9,28 @@ export interface Meta {
   ev: number | null;
   n_verified: number | null;
   n_named?: number | null; // named features (verified fraction reads against this, not m_total)
-  loo_r2: number | null;
+  loo_r2: number | null; // back-compat: null unless genuinely leave-one-model-out
+  // fit quality of whatever predictions exist + whether they're held-out. Older bundles
+  // only have loo_r2 (which could silently be in-sample — hence the split).
+  r2?: number | null;
+  is_loo?: boolean;
   n_models: number | null;
+  // false when the dataset has no preference labels — the viewer then hides every
+  // preference-derived surface (Bias, Validation, reward columns, "what wins" panels).
+  // absent in older bundles → treated as true (label-bearing) for backward compat.
+  has_preference?: boolean;
 }
+
+// bundle_manifest.json — written LAST by the export, so it describes a completed run.
+// Files not listed are treated as absent (stale artifacts can't masquerade as current).
+export interface BundleManifest {
+  schema_version: number;
+  generated_at?: string;
+  lens?: string;
+  files: string[]; // artifact names written this run ("examples/" covers the shard dir)
+  errors?: { stage: string; error: string }[];
+}
+export const BUNDLE_SCHEMA_VERSION = 2;
 
 export interface Feature {
   feature_id: number;
@@ -59,6 +78,11 @@ export interface DiagnosisRow {
   delta_vs_pool: number[];
   // report-card extras (added by export_viewer_data.py; absent in older bundles)
   fire_rate?: number[]; // per-feature activation rate for this model, parallel to features
+  // raw counts (fires-positive / fires-negative per feature) — with Diagnosis.tot_pos/
+  // tot_neg/n_total these let the viewer z-test delta_vs_pool + BH instead of showing
+  // bare effects. Absent in older bundles → no significance shown.
+  fire_pos?: number[];
+  fire_neg?: number[];
   prompt_types?: { concept: string; win_rate: number; n: number }[];
   // per-model prompt-concept -> response-concept -> within-prompt Δwin edges
   relations?: { prompt_concept: string; response_concept: string; delta_win: number; n: number }[];
@@ -71,6 +95,11 @@ export interface Diagnosis {
   rows: Record<string, DiagnosisRow>;
   clusters?: number[]; // cluster_id parallel to `features`
   behaviors?: Record<string, string>;
+  // pool totals over ALL battles (incl. each model's own — subtract fire_pos/fire_neg
+  // to get the everyone-else pool), parallel to `features`. For poolContrastP.
+  tot_pos?: number[];
+  tot_neg?: number[];
+  n_total?: number;
   // honest stub written when no oriented bank exists (export couldn't build a diagnosis)
   error?: string;
   message?: string;
@@ -202,6 +231,7 @@ export interface CondCell {
   p: number | null; // cond_p_bonferroni
   sig: boolean; // cond_significant
   n: number | null; // battles of this prompt type
+  nf?: number | null; // battles of this type where the feature FIRES — the honest support
 }
 export interface ConditionalData {
   prompt_concepts: { id: number; name: string | null }[];
@@ -271,6 +301,7 @@ export interface HeadToHead {
 
 export interface Bundle {
   meta: Meta;
+  manifest: BundleManifest | null; // null = legacy bundle without a manifest
   features: Feature[];
   validation: ModelValidation[];
   diagnosis: Diagnosis | null;

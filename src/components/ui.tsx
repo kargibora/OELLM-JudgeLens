@@ -23,7 +23,7 @@ export function Metric({ label, value, sub }: { label: string; value: React.Reac
   return (
     <Card className="flex flex-col gap-1">
       <span className="text-xs uppercase tracking-wider text-slate-400">{label}</span>
-      <span className="text-2xl font-semibold text-slate-100">{value}</span>
+      <span className="text-2xl font-semibold tabular-nums text-slate-100">{value}</span>
       {sub && <span className="text-xs text-slate-500">{sub}</span>}
     </Card>
   );
@@ -58,13 +58,15 @@ export function divergeColor(v: number, ref: number): string {
 export const WINRATE_REF = 0.2;
 
 // Frequency (fire-rate) is NOT good/bad, so it gets its own NEUTRAL diverging pair —
-// blue (more) ↔ amber (less) — kept distinct from the green/red valence palette so the
-// two never collide on one page. A ±0.25 fire-rate difference saturates.
+// blue (more) ↔ slate (less) — kept distinct from the green/red valence palette so the
+// two never collide on one page. Amber is deliberately NOT used here: it's reserved for
+// caution states (failed verification, confound flags), and "does this less" is not a
+// warning. A ±0.25 fire-rate difference saturates.
 export const FIRE_REF = 0.25;
 export function fireDivergeColor(v: number, ref: number = FIRE_REF): string {
   const t = Math.max(-1, Math.min(1, ref ? v / ref : 0));
   const a = 0.18 + 0.82 * Math.abs(t);
-  return t >= 0 ? `rgba(96, 165, 250, ${a.toFixed(2)})` : `rgba(251, 191, 36, ${a.toFixed(2)})`;
+  return t >= 0 ? `rgba(96, 165, 250, ${a.toFixed(2)})` : `rgba(148, 163, 184, ${a.toFixed(2)})`;
 }
 
 // unnamed features carry a null concept (only the top-N are annotated). Render their
@@ -120,17 +122,24 @@ export function ConceptLabel({
 
 // ✓ verified / unverified pill — drives the "is this label trustworthy?" signal.
 // `n` (held-out pairs) shown when present so n=14 doesn't masquerade as n=200.
+// Three states, not two: a label that FAILED its held-out check is materially worse
+// than one that was never tested — don't let both read "unverified".
 export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number | null }) {
   if (pass === undefined || pass === null)
-    return <span className="rounded-full bg-slate-700/30 px-1.5 py-0.5 text-[10px] text-slate-500">unverified</span>;
+    return (
+      <span className="rounded-full bg-slate-700/30 px-1.5 py-0.5 text-[10px] text-slate-500"
+        title="this label has not been through the held-out fidelity check yet">
+        not tested
+      </span>
+    );
   return (
     <span
       className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
         pass ? "bg-good/15 text-good" : "bg-amber-500/15 text-amber-400"
       }`}
-      title={pass ? "passed held-out fidelity check" : "failed held-out fidelity check"}
+      title={pass ? "an independent LLM confirmed this label on held-out pairs" : "an independent LLM could NOT confirm this label on held-out pairs"}
     >
-      {pass ? "✓ verified" : "✗ unverified"}
+      {pass ? "✓ verified" : "✗ failed check"}
       {n != null ? ` · n=${n}` : ""}
     </span>
   );
@@ -138,7 +147,7 @@ export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number |
 
 // muted "this is an LLM-assigned label, association not causation" footnote
 export function Caveat({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] leading-snug text-slate-500">{children}</p>;
+  return <p className="mt-2 max-w-prose text-xs leading-snug text-slate-400/90">{children}</p>;
 }
 
 // clip long text to n chars with an ellipsis (shared across the browse hubs)
@@ -163,7 +172,7 @@ export function ConceptBarRow({
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs ${
+      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs transition-colors duration-150 ${
         onClick ? "rounded hover:bg-edge/30" : "cursor-default"
       } ${dim ? "opacity-70" : ""}`}
     >
@@ -180,5 +189,50 @@ export function ConceptBarRow({
         {value}
       </span>
     </button>
+  );
+}
+
+// pulsing placeholder while lazy data streams in — used instead of "Loading…" strings.
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg bg-edge/40 ${className}`} />;
+}
+
+// N stacked card-shaped skeletons (the shape examples/battle lists load into).
+export function SkeletonList({ n = 3, itemClass = "h-24" }: { n?: number; itemClass?: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {Array.from({ length: n }, (_, i) => (
+        <Skeleton key={i} className={itemClass} />
+      ))}
+    </div>
+  );
+}
+
+// THE segmented control — one shell, one active state, two sizes. Replaces the five
+// hand-rolled pill-group recipes that had drifted across tabs.
+export function Segmented<T extends string>({
+  options, value, onChange, size = "sm",
+}: {
+  options: readonly { value: T; label: string; title?: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  size?: "sm" | "xs";
+}) {
+  const pad = size === "sm" ? "px-2.5 py-1 text-xs" : "px-1.5 py-0.5 text-[11px]";
+  return (
+    <div className="inline-flex w-fit rounded-lg border border-edge bg-ink/40 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          title={o.title}
+          onClick={() => onChange(o.value)}
+          className={`rounded-md transition-colors duration-150 ${pad} ${
+            value === o.value ? "bg-accent text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }

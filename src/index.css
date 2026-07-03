@@ -13,5 +13,14 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 6px; }
+/* slim, track-less scrollbars that brighten on hover; Firefox via scrollbar-width */
+* { scrollbar-width: thin; scrollbar-color: #243041 transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #243041;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+:hover::-webkit-scrollbar-thumb { background: #334155; background-clip: content-box; }

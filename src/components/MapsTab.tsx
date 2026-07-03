@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { MapData, PromptMapData, ResponseMapData } from "../types";
 import { useMap } from "../data";
-import { Card } from "./ui";
+import { Card, Segmented, Skeleton } from "./ui";
 import MapView from "./MapView";
 import ResponseMapView from "./ResponseMapView";
 import PromptMapView from "./PromptMapView";
@@ -16,26 +16,15 @@ const SUBS: { id: Sub; label: string }[] = [
 // One tab for all three UMAP maps. Each sub-map's data is fetched lazily on first
 // visit (via useMap) so startup isn't blocked on tens of MB of map JSON; panes stay
 // mounted once visited (hidden when inactive) so their state + parsed data persist.
-export default function MapsTab({ onJump }: { onJump: (pc: number, cf: number) => void }) {
+export default function MapsTab({ onJump, hasLabels = true }: { onJump: (pc: number, cf: number) => void; hasLabels?: boolean }) {
   const [sub, setSub] = useState<Sub>("battle");
   const visited = useRef<Set<Sub>>(new Set(["battle"]));
   visited.current.add(sub);
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="inline-flex w-fit rounded-xl border border-edge bg-panel/60 p-1">
-        {SUBS.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => setSub(s.id)}
-            className={`rounded-lg px-3 py-1.5 text-sm transition ${
-              sub === s.id ? "bg-accent text-white" : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+      <Segmented value={sub} onChange={(v) => setSub(v)}
+        options={SUBS.map((s) => ({ value: s.id, label: s.label }))} />
 
       {visited.current.has("battle") && (
         <div hidden={sub !== "battle"}>
@@ -49,7 +38,7 @@ export default function MapsTab({ onJump }: { onJump: (pc: number, cf: number) =
       )}
       {visited.current.has("prompt") && (
         <div hidden={sub !== "prompt"}>
-          <PromptMapPane onJump={onJump} />
+          <PromptMapPane onJump={onJump} hasLabels={hasLabels} />
         </div>
       )}
     </div>
@@ -59,7 +48,8 @@ export default function MapsTab({ onJump }: { onJump: (pc: number, cf: number) =
 function Loading({ what }: { what: string }) {
   return (
     <Card>
-      <p className="text-sm text-slate-400">Loading {what}…</p>
+      <p className="mb-2 text-xs text-slate-500">loading {what}…</p>
+      <Skeleton className="h-[420px] w-full" />
     </Card>
   );
 }
@@ -76,8 +66,8 @@ function FeatureMapPane() {
   return <ResponseMapView map={map} />;
 }
 
-function PromptMapPane({ onJump }: { onJump: (pc: number, cf: number) => void }) {
+function PromptMapPane({ onJump, hasLabels }: { onJump: (pc: number, cf: number) => void; hasLabels: boolean }) {
   const map = useMap<PromptMapData>("prompt_map.json");
   if (map === undefined) return <Loading what="prompt map" />;
-  return <PromptMapView map={map} onJump={onJump} />;
+  return <PromptMapView map={map} onJump={onJump} hasLabels={hasLabels} />;
 }

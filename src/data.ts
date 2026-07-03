@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
-  Bundle, ConditionalBundle, ConditionalData,
+  Bundle, BundleManifest, ConditionalBundle, ConditionalData, Example,
   MapData, PromptMapData, ResponseMapData,
 } from "./types";
 
@@ -38,32 +38,54 @@ async function getJSON<T>(name: string, optional = false): Promise<T | null> {
   }
 }
 
+// Manifest of the CURRENT bundle (null = legacy bundle without one). Set by loadBundle
+// before anything else fetches, and consulted by every optional fetch so an artifact
+// left over from an older export is treated as absent rather than served as current.
+let bundleManifest: BundleManifest | null = null;
+
+function listedInManifest(name: string): boolean {
+  if (!bundleManifest) return true; // legacy bundle: no manifest → trust the filesystem
+  const files = bundleManifest.files ?? [];
+  if (name.startsWith("examples/")) return files.includes("examples/");
+  return files.includes(name);
+}
+
+// optional fetch that respects the manifest: unlisted → absent, no network round-trip.
+async function getListed<T>(name: string): Promise<T | null> {
+  if (!listedInManifest(name)) return null;
+  return getJSON<T>(name, true);
+}
+
 export async function loadBundle(): Promise<Bundle> {
   // NOTE: the three UMAP maps (map/prompt_map/response_map, ~tens of MB) are NOT loaded
   // here — they're fetched lazily by useMap() when the Maps tab opens, so startup isn't
   // blocked on the heaviest JSON parses in the app.
   // NOTE: delta.json is no longer fetched — the Winner-contrast heatmap that consumed it
   // was removed, so loading that (large) payload was pure startup cost.
-  const [meta, features, validation, diagnosis, examples, bias, promptFeatures, conditional, elicitation, reportBattles, headToHead] =
+  // examples/ shards are NOT fetched here — useFeatureExamples() lazy-loads per feature.
+  bundleManifest = await getJSON<BundleManifest>("bundle_manifest.json", true);
+  const [meta, features, validation, diagnosis, bias, promptFeatures, conditional, elicitation, reportBattles, headToHead] =
     await Promise.all([
       getJSON<Bundle["meta"]>("meta.json"),
       getJSON<Bundle["features"]>("features.json"),
-      getJSON<Bundle["validation"]>("validation.json"),
-      getJSON<Bundle["diagnosis"]>("diagnosis.json", true),
-      getJSON<Bundle["examples"]>("examples.json", true),
-      getJSON<Bundle["bias"]>("bias_screen.json", true),
-      getJSON<Bundle["promptFeatures"]>("prompt_features.json", true),
-      getJSON<unknown>("conditional.json", true),
-      getJSON<Bundle["elicitation"]>("elicitation.json", true),
-      getJSON<Bundle["reportBattles"]>("report_battles.json", true),
-      getJSON<Bundle["headToHead"]>("head_to_head.json", true),
+      // validation is OPTIONAL: a label-free export legitimately has none, and its
+      // absence must not red-box the whole app (it used to).
+      getListed<Bundle["validation"]>("validation.json"),
+      getListed<Bundle["diagnosis"]>("diagnosis.json"),
+      getListed<Bundle["bias"]>("bias_screen.json"),
+      getListed<Bundle["promptFeatures"]>("prompt_features.json"),
+      getListed<unknown>("conditional.json"),
+      getListed<Bundle["elicitation"]>("elicitation.json"),
+      getListed<Bundle["reportBattles"]>("report_battles.json"),
+      getListed<Bundle["headToHead"]>("head_to_head.json"),
     ]);
   return {
     meta: meta!,
+    manifest: bundleManifest,
     features: features!,
     validation: validation ?? [],
     diagnosis: diagnosis ?? null,
-    examples: examples ?? null,
+    examples: null, // lazy — see useFeatureExamples()
     bias: bias ?? null,
     promptFeatures: promptFeatures ?? null,
     conditional: wrapKeyspace<ConditionalData>(conditional) as ConditionalBundle | null,
@@ -76,6 +98,7 @@ export async function loadBundle(): Promise<Bundle> {
 // Optional JSON fetched on demand (e.g. examples_by_model.json — large, only needed when
 // the report-card drill-in opens, so it's not loaded at startup). null if absent.
 export async function fetchOptional<T>(name: string): Promise<T | null> {
+  if (!listedInManifest(name)) return null; // stale leftover from an older export
   return getJSON<T>(name, true);
 }
 
@@ -86,6 +109,7 @@ const mapCache = new Map<string, unknown>();
 const mapInflight = new Map<string, Promise<unknown>>();
 
 async function loadMap<T>(name: string): Promise<T | null> {
+  if (!listedInManifest(name)) return null; // stale leftover from an older export
   if (mapCache.has(name)) return mapCache.get(name) as T | null;
   if (!mapInflight.has(name)) {
     mapInflight.set(
@@ -105,6 +129,37 @@ async function loadMap<T>(name: string): Promise<T | null> {
     );
   }
   return mapInflight.get(name) as Promise<T | null>;
+}
+
+// Examples are SHARDED per feature (data/examples/<fid>.json): only the selected
+// feature's examples are fetched, then cached. This scales to lots of examples per
+// feature with near-zero startup/payload cost — you only transfer what you look at.
+// undefined = loading, null = none/absent, Example[] = loaded.
+// Legacy fallback: pre-shard bundles have one monolithic examples.json. Only consulted
+// when the bundle has NO manifest (a manifested bundle either lists examples/ or has none).
+async function legacyExamples(fid: number): Promise<Example[] | null> {
+  if (bundleManifest) return null;
+  const all = await loadMap<Record<string, Example[]>>("examples.json");
+  return all?.[String(fid)] ?? null;
+}
+
+export function useFeatureExamples(
+  fid: number | null | undefined
+): Example[] | null | undefined {
+  const name = fid == null ? null : `examples/${fid}.json`;
+  const [data, setData] = useState<Example[] | null | undefined>(
+    name && mapCache.has(name) ? (mapCache.get(name) as Example[] | null) : undefined
+  );
+  useEffect(() => {
+    if (name == null) { setData(null); return; }
+    let live = true;
+    setData(mapCache.has(name) ? (mapCache.get(name) as Example[] | null) : undefined);
+    loadMap<Example[]>(name)
+      .then((d) => (d == null && fid != null ? legacyExamples(fid) : d))
+      .then((d) => { if (live) setData(d); });
+    return () => { live = false; };
+  }, [name]);
+  return data;
 }
 
 // undefined = still loading, null = file absent, T = loaded

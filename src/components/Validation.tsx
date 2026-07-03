@@ -10,14 +10,19 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
-import type { ModelValidation } from "../types";
+import type { Meta, ModelValidation } from "../types";
 import { Card, Explain, Metric } from "./ui";
 import { fmt } from "../data";
 
-export default function Validation({ validation }: { validation: ModelValidation[] }) {
+export default function Validation({ validation, meta }: { validation: ModelValidation[]; meta?: Meta | null }) {
+  // honest LOO story: only claim leave-one-model-out if the LOO column actually exists
+  // for every point — don't silently fall back to in-sample scores under a LOO label.
+  const isLoo = validation.length > 0 && validation.every((m) => m.predicted_score_loo != null);
+
   const { points, r2, line } = useMemo(() => {
+    if (validation.length < 2) return { points: [], r2: null as number | null, line: null };
     const pts = validation.map((m) => ({
-      x: m.predicted_score_loo ?? m.predicted_score,
+      x: (isLoo ? m.predicted_score_loo : m.predicted_score) as number,
       y: m.actual_win_rate,
       model: m.model,
       n: m.n_battles,
@@ -33,8 +38,9 @@ export default function Validation({ validation }: { validation: ModelValidation
       sxx += (p.x - mx) ** 2;
       syy += (p.y - my) ** 2;
     }
-    const r = sxy / Math.sqrt(sxx * syy || 1);
-    const slope = sxy / (sxx || 1);
+    if (sxx === 0 || syy === 0) return { points: pts, r2: null as number | null, line: null };
+    const r = sxy / Math.sqrt(sxx * syy);
+    const slope = sxy / sxx;
     const intercept = my - slope * mx;
     const xs = pts.map((p) => p.x);
     const lo = Math.min(...xs);
@@ -47,14 +53,40 @@ export default function Validation({ validation }: { validation: ModelValidation
         { x: hi, y: intercept + slope * hi },
       ],
     };
-  }, [validation]);
+  }, [validation, isLoo]);
+
+  // prefer the export's authoritative number when present (computed the same way for
+  // everyone); the client-side one is a fallback for older bundles.
+  const shownR2 = meta?.r2 ?? r2;
+
+  if (validation.length === 0)
+    return (
+      <Card>
+        <h2 className="text-lg font-semibold">Validation</h2>
+        <p className="mt-2 text-sm text-slate-400">
+          No per-model validation in this bundle — this needs preference labels and a
+          per-model diagnosis run.
+        </p>
+      </Card>
+    );
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Metric label="R²" value={fmt(r2, 3)} sub="predicted vs actual" />
+        <Metric
+          label="R²"
+          value={fmt(shownR2, 3)}
+          sub={isLoo ? "held-out (leave-one-model-out)" : "in-sample fit"}
+        />
         <Metric label="models" value={validation.length} />
       </div>
+      {!isLoo && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300/90">
+          These predictions are an <b>in-sample fit</b> — no leave-one-model-out scores in
+          this bundle, so each model's prediction has seen its own data. Treat the fit
+          optimistically.
+        </div>
+      )}
       <Card>
         <h2 className="text-lg font-semibold">Predicted deficit vs actual win rate</h2>
         <div className="mb-3">
@@ -64,19 +96,26 @@ export default function Validation({ validation }: { validation: ModelValidation
             how much humans reward that behaviour — one number for “does it do the right things?”.
             The y-axis is the model’s <b>real human win rate</b>. Dots on a rising line mean what the
             lens says a model lacks predicts how often it actually loses. <b>R²</b> = the share of
-            win-rate differences this explains ({fmt(r2, 2)} ≈ {(r2 * 100).toFixed(0)}%); it’s{" "}
-            <b>leave-one-model-out</b>, so each model’s score never uses its own data.
+            win-rate differences this explains
+            {shownR2 != null && <> ({fmt(shownR2, 2)} ≈ {(shownR2 * 100).toFixed(0)}%)</>};{" "}
+            {isLoo ? (
+              <>it’s <b>leave-one-model-out</b>, so each model’s score never uses its own data.</>
+            ) : (
+              <>it’s an <b>in-sample</b> fit — treat it as an upper bound.</>
+            )}
           </Explain>
         </div>
         <ResponsiveContainer width="100%" height={460}>
           <ScatterChart margin={{ left: 8, right: 24, top: 8, bottom: 16 }}>
-            <CartesianGrid stroke="#1f2937" />
+            <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" vertical={false} />
             <XAxis
               type="number"
               dataKey="x"
               name="predicted"
               stroke="#64748b"
               fontSize={12}
+              tickLine={false}
+              axisLine={false}
               label={{ value: "predicted deficit score", position: "bottom", fill: "#64748b" }}
             />
             <YAxis
@@ -85,6 +124,8 @@ export default function Validation({ validation }: { validation: ModelValidation
               name="win rate"
               stroke="#64748b"
               fontSize={12}
+              tickLine={false}
+              axisLine={false}
               tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
             />
             <ZAxis type="number" dataKey="n" range={[20, 320]} name="battles" />
@@ -106,13 +147,11 @@ export default function Validation({ validation }: { validation: ModelValidation
                 ) : null
               }
             />
-            <ReferenceLine
-              segment={line}
-              stroke="#6366f1"
-              strokeWidth={2}
-              strokeDasharray="5 4"
-            />
-            <Scatter data={points} fill="#34d399" fillOpacity={0.6} />
+            {line && (
+              <ReferenceLine segment={line} stroke="#6366f1" strokeWidth={2} strokeDasharray="5 4" />
+            )}
+            {/* indigo, not the good/bad green — a model scatter has no valence */}
+            <Scatter data={points} fill="#6366f1" fillOpacity={0.75} stroke="#0b0f17" />
           </ScatterChart>
         </ResponsiveContainer>
       </Card>
