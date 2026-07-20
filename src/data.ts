@@ -1,184 +1,249 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type {
-  Bundle, BundleManifest, ConditionalBundle, ConditionalData, Example,
-  MapData, PromptMapData, ResponseMapData,
+  Bundle,
+  BundleManifest,
+  ConditionalBundle,
+  ConditionalData,
+  Example,
+  MapData,
+  PromptMapData,
+  ResponseMapData,
 } from "./types";
+import { BUNDLE_SCHEMA_VERSION } from "./types";
 
-// conditional.json / delta.json are now `{raw, clustered}` wrappers. Older bundles wrote
-// the flat object directly — normalize those to `{raw: flat, clustered: null}` so the
-// viewer handles both without a re-export.
 function wrapKeyspace<T>(d: unknown): { raw: T | null; clustered: T | null } | null {
-  if (d == null || typeof d !== "object") return null; // guard: `in` throws on primitives
+  if (d == null || typeof d !== "object") return null;
   const o = d as Record<string, unknown>;
   if ("raw" in o || "clustered" in o)
     return { raw: (o.raw as T) ?? null, clustered: (o.clustered as T) ?? null };
-  return { raw: d as T, clustered: null }; // legacy flat shape
+  return { raw: d as T, clustered: null };
 }
 
-// resolve data files relative to the deploy base (works at "/" and under
-// GitHub Pages "/<repo>/"); BASE_URL is "./" given vite base: "./"
-const DATA = `${import.meta.env.BASE_URL}data/`.replace(/\/{2,}/g, "/");
+const DEFAULT_DATA = `${import.meta.env.BASE_URL}data/`;
 
-async function getJSON<T>(name: string, optional = false): Promise<T | null> {
-  const path = `${DATA}${name}`;
-  const res = await fetch(path);
-  if (!res.ok) {
-    if (optional) return null;
-    throw new Error(`failed to load ${path} (${res.status})`);
+function normalizeRoot(root: string): string {
+  const trimmed = root.trim();
+  if (!trimmed) return DEFAULT_DATA;
+  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
+}
+
+export interface DatasetInfo { id: string; label: string; overlay: string }
+
+function requireObject(value: unknown, name: string): Record<string, unknown> {
+  if (value == null || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`${name} has an invalid shape (expected an object)`);
+  return value as Record<string, unknown>;
+}
+
+function validateManifest(value: unknown): BundleManifest | null {
+  if (value == null) return null;
+  const m = requireObject(value, "bundle_manifest.json");
+  if (typeof m.schema_version !== "number" || !Array.isArray(m.files) || !m.files.every((x) => typeof x === "string"))
+    throw new Error("bundle_manifest.json is missing schema_version or files[]");
+  if (m.schema_version !== BUNDLE_SCHEMA_VERSION)
+    throw new Error(`Unsupported bundle schema v${m.schema_version}; this viewer requires v${BUNDLE_SCHEMA_VERSION}`);
+  return value as BundleManifest;
+}
+
+function validateMeta(value: unknown): Bundle["meta"] {
+  const m = requireObject(value, "meta.json");
+  for (const key of ["lens", "m_total", "k", "n_battles"] as const)
+    if (m[key] == null) throw new Error(`meta.json is missing required field ${key}`);
+  if (typeof m.lens !== "string" || typeof m.m_total !== "number" || typeof m.k !== "number" || typeof m.n_battles !== "number")
+    throw new Error("meta.json has invalid core field types");
+  return value as Bundle["meta"];
+}
+
+function validateFeatures(value: unknown): Bundle["features"] {
+  if (!Array.isArray(value) || !value.every((f) =>
+    f != null && typeof f === "object" && Number.isInteger((f as Record<string, unknown>).feature_id)))
+    throw new Error("features.json must be an array with an integer feature_id on every row");
+  return value as Bundle["features"];
+}
+
+type CacheState<T> = { hit: boolean; value: T | null | undefined };
+
+/**
+ * One isolated exported-bundle client. Each mounted viewer owns its own instance, manifest,
+ * cache, and in-flight requests, so two viewers cannot overwrite one another's data source.
+ */
+export class PrefScopeDataClient {
+  readonly root: string;
+  private manifest: BundleManifest | null = null;
+  private readonly cache = new Map<string, unknown>();
+  private readonly inflight = new Map<string, Promise<unknown>>();
+
+  constructor(root = DEFAULT_DATA) {
+    this.root = normalizeRoot(root);
   }
-  // a missing public file can be answered by the dev server's SPA fallback —
-  // a 200 with index.html. parse() would then choke on "<!doctype". for optional
-  // files (e.g. prompt_map.json before it's generated) treat that as absent.
-  const text = await res.text();
-  try {
-    return JSON.parse(text) as T;
-  } catch (e) {
-    if (optional) return null;
-    throw new Error(`failed to parse ${path} as JSON (got ${res.headers.get("content-type")})`);
+
+  private async getJSON<T>(name: string, optional = false): Promise<T | null> {
+    const path = `${this.root}${name.replace(/^\/+/, "")}`;
+    const res = await fetch(path);
+    if (!res.ok) {
+      if (optional) return null;
+      throw new Error(`failed to load ${path} (${res.status})`);
+    }
+    const text = await res.text();
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      // Vite/other SPA hosts may answer a missing optional JSON path with index.html.
+      // Treat that specific fallback as absent; malformed JSON is corruption and throws.
+      if (optional && /^\s*<!doctype\s+html/i.test(text)) return null;
+      throw new Error(`failed to parse ${path} as JSON (got ${res.headers.get("content-type")})`);
+    }
   }
-}
 
-// Manifest of the CURRENT bundle (null = legacy bundle without one). Set by loadBundle
-// before anything else fetches, and consulted by every optional fetch so an artifact
-// left over from an older export is treated as absent rather than served as current.
-let bundleManifest: BundleManifest | null = null;
+  hasArtifact(name: string): boolean {
+    if (!this.manifest) return true;
+    const files = this.manifest.files ?? [];
+    // Sharded artifact directories are represented once in the manifest (for example
+    // ``examples/`` or ``joint_examples/``), while callers request an individual shard.
+    const slash = name.indexOf("/");
+    if (slash >= 0 && files.includes(name.slice(0, slash + 1))) return true;
+    return files.includes(name);
+  }
 
-function listedInManifest(name: string): boolean {
-  if (!bundleManifest) return true; // legacy bundle: no manifest → trust the filesystem
-  const files = bundleManifest.files ?? [];
-  if (name.startsWith("examples/")) return files.includes("examples/");
-  return files.includes(name);
-}
+  isLegacyBundle(): boolean { return this.manifest == null; }
 
-// optional fetch that respects the manifest: unlisted → absent, no network round-trip.
-async function getListed<T>(name: string): Promise<T | null> {
-  if (!listedInManifest(name)) return null;
-  return getJSON<T>(name, true);
-}
+  async loadDatasets(): Promise<DatasetInfo[]> {
+    const raw = await this.getJSON<unknown>("datasets.json", true);
+    if (!Array.isArray(raw) || raw.length === 0)
+      return [{ id: "default", label: "Dataset", overlay: "" }];
+    const rows = raw.filter((d): d is DatasetInfo => {
+      if (d == null || typeof d !== "object") return false;
+      const x = d as Record<string, unknown>;
+      if (typeof x.id !== "string" || typeof x.label !== "string" || typeof x.overlay !== "string") return false;
+      return !x.overlay.includes("..") && !/^(?:[a-z]+:|\/)/i.test(x.overlay);
+    }).map((d) => ({ ...d, overlay: d.overlay && !d.overlay.endsWith("/") ? `${d.overlay}/` : d.overlay }));
+    return rows.length ? rows : [{ id: "default", label: "Dataset", overlay: "" }];
+  }
 
-export async function loadBundle(): Promise<Bundle> {
-  // NOTE: the three UMAP maps (map/prompt_map/response_map, ~tens of MB) are NOT loaded
-  // here — they're fetched lazily by useMap() when the Maps tab opens, so startup isn't
-  // blocked on the heaviest JSON parses in the app.
-  // NOTE: delta.json is no longer fetched — the Winner-contrast heatmap that consumed it
-  // was removed, so loading that (large) payload was pure startup cost.
-  // examples/ shards are NOT fetched here — useFeatureExamples() lazy-loads per feature.
-  bundleManifest = await getJSON<BundleManifest>("bundle_manifest.json", true);
-  const [meta, features, validation, diagnosis, bias, promptFeatures, conditional, elicitation, reportBattles, headToHead] =
-    await Promise.all([
-      getJSON<Bundle["meta"]>("meta.json"),
-      getJSON<Bundle["features"]>("features.json"),
-      // validation is OPTIONAL: a label-free export legitimately has none, and its
-      // absence must not red-box the whole app (it used to).
-      getListed<Bundle["validation"]>("validation.json"),
-      getListed<Bundle["diagnosis"]>("diagnosis.json"),
-      getListed<Bundle["bias"]>("bias_screen.json"),
-      getListed<Bundle["promptFeatures"]>("prompt_features.json"),
-      getListed<unknown>("conditional.json"),
-      getListed<Bundle["elicitation"]>("elicitation.json"),
-      getListed<Bundle["reportBattles"]>("report_battles.json"),
-      getListed<Bundle["headToHead"]>("head_to_head.json"),
+  async loadBundle(overlay = ""): Promise<Bundle> {
+    this.manifest = validateManifest(await this.getJSON<unknown>("bundle_manifest.json", true));
+    const [metaRaw, featuresRaw] = await Promise.all([
+      this.getJSON<unknown>(overlay ? `${overlay}meta.json` : "meta.json"),
+      this.getJSON<unknown>("features.json"),
     ]);
-  return {
-    meta: meta!,
-    manifest: bundleManifest,
-    features: features!,
-    validation: validation ?? [],
-    diagnosis: diagnosis ?? null,
-    examples: null, // lazy — see useFeatureExamples()
-    bias: bias ?? null,
-    promptFeatures: promptFeatures ?? null,
-    conditional: wrapKeyspace<ConditionalData>(conditional) as ConditionalBundle | null,
-    elicitation: elicitation ?? null,
-    reportBattles: reportBattles ?? null,
-    headToHead: headToHead ?? null,
-  };
-}
-
-// Optional JSON fetched on demand (e.g. examples_by_model.json — large, only needed when
-// the report-card drill-in opens, so it's not loaded at startup). null if absent.
-export async function fetchOptional<T>(name: string): Promise<T | null> {
-  if (!listedInManifest(name)) return null; // stale leftover from an older export
-  return getJSON<T>(name, true);
-}
-
-// --- lazy map loading -------------------------------------------------------
-// The maps are large and exploratory; fetch + parse each one only when its sub-tab
-// is first opened, and cache the parsed result (re-visits are instant, no re-parse).
-const mapCache = new Map<string, unknown>();
-const mapInflight = new Map<string, Promise<unknown>>();
-
-async function loadMap<T>(name: string): Promise<T | null> {
-  if (!listedInManifest(name)) return null; // stale leftover from an older export
-  if (mapCache.has(name)) return mapCache.get(name) as T | null;
-  if (!mapInflight.has(name)) {
-    mapInflight.set(
-      name,
-      getJSON<T>(name, true)
-        .then((d) => {
-          mapCache.set(name, d); // cache null (absent) too, so we don't refetch
-          mapInflight.delete(name);
-          return d;
-        })
-        .catch(() => {
-          // hard fetch failure (e.g. offline): clear the inflight entry so a later
-          // visit can retry, and don't poison the cache
-          mapInflight.delete(name);
-          return null;
-        })
-    );
-  }
-  return mapInflight.get(name) as Promise<T | null>;
-}
-
-// Examples are SHARDED per feature (data/examples/<fid>.json): only the selected
-// feature's examples are fetched, then cached. This scales to lots of examples per
-// feature with near-zero startup/payload cost — you only transfer what you look at.
-// undefined = loading, null = none/absent, Example[] = loaded.
-// Legacy fallback: pre-shard bundles have one monolithic examples.json. Only consulted
-// when the bundle has NO manifest (a manifested bundle either lists examples/ or has none).
-async function legacyExamples(fid: number): Promise<Example[] | null> {
-  if (bundleManifest) return null;
-  const all = await loadMap<Record<string, Example[]>>("examples.json");
-  return all?.[String(fid)] ?? null;
-}
-
-export function useFeatureExamples(
-  fid: number | null | undefined
-): Example[] | null | undefined {
-  const name = fid == null ? null : `examples/${fid}.json`;
-  const [data, setData] = useState<Example[] | null | undefined>(
-    name && mapCache.has(name) ? (mapCache.get(name) as Example[] | null) : undefined
-  );
-  useEffect(() => {
-    if (name == null) { setData(null); return; }
-    let live = true;
-    setData(mapCache.has(name) ? (mapCache.get(name) as Example[] | null) : undefined);
-    loadMap<Example[]>(name)
-      .then((d) => (d == null && fid != null ? legacyExamples(fid) : d))
-      .then((d) => { if (live) setData(d); });
-    return () => { live = false; };
-  }, [name]);
-  return data;
-}
-
-// undefined = still loading, null = file absent, T = loaded
-export function useMap<T = MapData | PromptMapData | ResponseMapData>(
-  name: string
-): T | null | undefined {
-  const [data, setData] = useState<T | null | undefined>(() =>
-    mapCache.has(name) ? (mapCache.get(name) as T | null) : undefined
-  );
-  useEffect(() => {
-    let live = true;
-    loadMap<T>(name).then((d) => {
-      if (live) setData(d);
-    });
-    return () => {
-      live = false;
+    const meta = validateMeta(metaRaw);
+    const features = validateFeatures(featuresRaw);
+    return {
+      meta,
+      manifest: this.manifest,
+      features,
+      validation: [],
+      diagnosis: null,
+      examples: null,
+      bias: null,
+      promptFeatures: null,
+      conditional: null,
+      elicitation: null,
+      reportBattles: null,
+      headToHead: null,
+      modelCompare: null,
+      coactivation: null,
     };
-  }, [name]);
+  }
+
+  cached<T>(name: string, manifestAware = true): CacheState<T> {
+    const key = `${manifestAware ? "listed" : "direct"}:${name}`;
+    return { hit: this.cache.has(key), value: this.cache.get(key) as T | null | undefined };
+  }
+
+  async artifact<T>(name: string, manifestAware = true): Promise<T | null> {
+    if (manifestAware && !this.hasArtifact(name)) return null;
+    const key = `${manifestAware ? "listed" : "direct"}:${name}`;
+    if (this.cache.has(key)) return this.cache.get(key) as T | null;
+    if (!this.inflight.has(key)) {
+      this.inflight.set(key, this.getJSON<T>(name, true).then((d) => {
+        this.cache.set(key, d);
+        this.inflight.delete(key);
+        return d;
+      }).catch((e) => {
+        this.inflight.delete(key);
+        throw e;
+      }));
+    }
+    return this.inflight.get(key) as Promise<T | null>;
+  }
+
+  async fetchOptional<T>(name: string): Promise<T | null> {
+    return this.artifact<T>(name, true);
+  }
+}
+
+export const DataClientContext = createContext<PrefScopeDataClient | null>(null);
+const defaultClient = new PrefScopeDataClient();
+
+export function useDataClient(): PrefScopeDataClient {
+  return useContext(DataClientContext) ?? defaultClient;
+}
+
+// Back-compatible low-level helpers for non-React consumers. Embedded viewers use their
+// own PrefScopeDataClient through context and do not share this default instance.
+let configuredClient = defaultClient;
+export function configureDataSource(root?: string): void {
+  configuredClient = new PrefScopeDataClient(root ?? DEFAULT_DATA);
+}
+export function currentDataSource(): string { return configuredClient.root; }
+export function loadDatasets(): Promise<DatasetInfo[]> { return configuredClient.loadDatasets(); }
+export function loadBundle(overlay = ""): Promise<Bundle> { return configuredClient.loadBundle(overlay); }
+
+export function normalizeConditional(d: unknown): ConditionalBundle | null {
+  return wrapKeyspace<ConditionalData>(d) as ConditionalBundle | null;
+}
+
+export function useDataArtifact<T>(
+  name: string | null,
+  manifestAware = true
+): T | null | undefined {
+  const client = useDataClient();
+  const [data, setData] = useState<T | null | undefined>(() => {
+    if (name == null) return undefined;
+    const cached = client.cached<T>(name, manifestAware);
+    return cached.hit ? cached.value : undefined;
+  });
+
+  useEffect(() => {
+    if (name == null) { setData(undefined); return; }
+    if (manifestAware && !client.hasArtifact(name)) { setData(null); return; }
+    const cached = client.cached<T>(name, manifestAware);
+    if (cached.hit) { setData(cached.value); return; }
+    let live = true;
+    setData(undefined);
+    client.artifact<T>(name, manifestAware)
+      .then((d) => { if (live) setData(d); })
+      .catch((error) => {
+        console.error(`PrefScope artifact failed: ${name}`, error);
+        if (live) setData(null);
+      });
+    return () => { live = false; };
+  }, [client, name, manifestAware]);
   return data;
+}
+
+// Per-feature example shards: request only the selected feature and cache it in this
+// viewer's client. Legacy bundles without manifests may still use examples.json.
+export function useFeatureExamples(fid: number | null | undefined): Example[] | null | undefined {
+  const client = useDataClient();
+  const name = fid == null ? null : `examples/${fid}.json`;
+  const shard = useDataArtifact<Example[]>(name);
+  const [legacy, setLegacy] = useState<Example[] | null | undefined>(undefined);
+  useEffect(() => {
+    if (fid == null || shard !== null) { setLegacy(undefined); return; }
+    if (!client.isLegacyBundle()) { setLegacy(null); return; }
+    let live = true;
+    client.artifact<Record<string, Example[]>>("examples.json", false)
+      .then((all) => { if (live) setLegacy(all?.[String(fid)] ?? null); })
+      .catch(() => { if (live) setLegacy(null); });
+    return () => { live = false; };
+  }, [client, fid, shard]);
+  return shard === null ? legacy : shard;
+}
+
+export function useMap<T = MapData | PromptMapData | ResponseMapData>(name: string): T | null | undefined {
+  return useDataArtifact<T>(name);
 }
 
 export const fmt = (x: number | null | undefined, d = 3) =>

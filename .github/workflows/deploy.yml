@@ -1,10 +1,13 @@
 name: Deploy viewer to GitHub Pages
 
-# Assumes this folder (viewer-web) is the repository root.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+env:
+  PREFSCOPE_DATA_RELEASE: viewer-data-m2048-2026-07-20
+  PREFSCOPE_DATA_ASSET: completion_m2048-public.tar.gz
 
 permissions:
   contents: read
@@ -22,11 +25,25 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+      - name: Download the versioned public analysis bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf public/data public/runs
+          mkdir -p public/runs
+          gh release download "$PREFSCOPE_DATA_RELEASE" \
+            --pattern "$PREFSCOPE_DATA_ASSET" \
+            --dir /tmp
+          tar -xzf "/tmp/$PREFSCOPE_DATA_ASSET" -C public/runs
       - run: npm ci
-      - run: npm run build
+      - name: Build the viewer
+        env:
+          VITE_PREFSCOPE_DATA_URL: ./runs/completion_m2048/
+        run: npm run build
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
 

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import type { ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
+import type { Coactivation, ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
 import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, Segmented, clip, divergeColor, WINRATE_REF } from "./ui";
 import { pct } from "../data";
+import JointEvidence from "./JointEvidence";
 
 // Prompt-first browser: pick a prompt concept and read, on one page, what responses it
 // tends to elicit (co-activation lift) and which of those actually help win it (the
@@ -15,20 +16,30 @@ export default function PromptBrowser({
   conditional,
   elicitation,
   reportBattles,
+  canLoadExamples = false,
+  onLoadExamples,
   promptFeatures,
+  coactivation,
   hasLabels = true,
   focus,
   onJumpFeature,
 }: {
   conditional: ConditionalBundle | null;
   elicitation: ElicitationData | null;
-  reportBattles: ReportBattles | null;
+  // undefined = optional large artifact has not been requested; null = unavailable.
+  reportBattles: ReportBattles | null | undefined;
+  canLoadExamples?: boolean;
+  onLoadExamples?: () => void;
   promptFeatures: PromptFeatures | null;
+  coactivation: Coactivation | null;
   hasLabels?: boolean;
   focus?: { pc: number } | null;
   onJumpFeature?: (cf: number) => void;
 }) {
-  const cond = conditional?.raw ?? null; // raw = individual prompt concepts (not clusters)
+  const [showCompound, setShowCompound] = useState(false);
+  const [keyspace, setKeyspace] = useState<"raw" | "clustered">("raw");
+  const cond = keyspace === "clustered" ? conditional?.clustered ?? null : conditional?.raw ?? null;
+  const clustered = keyspace === "clustered";
   // prompt-lens verification/cluster per prompt concept (from the prompt lens)
   const pmeta = useMemo(() => {
     const m = new Map<number, { verified: boolean; behavior?: string }>();
@@ -58,9 +69,9 @@ export default function PromptBrowser({
     const q = query.trim().toLowerCase();
     return concepts
       .filter((p) => !q || conceptLabel(p.id, p.name).toLowerCase().includes(q))
-      .filter((p) => !verifiedOnly || pmeta.get(p.id)?.verified)
+      .filter((p) => clustered || !verifiedOnly || pmeta.get(p.id)?.verified)
       .sort((a, b) => (sortBy === "n" ? b.n - a.n : b.maxAbsDelta - a.maxAbsDelta || b.n - a.n));
-  }, [concepts, query, sortBy, verifiedOnly, pmeta]);
+  }, [clustered, concepts, query, sortBy, verifiedOnly, pmeta]);
 
   // default / cross-tab focus selection
   const handledFocus = useRef<unknown>(null);
@@ -82,6 +93,7 @@ export default function PromptBrowser({
     );
 
   const selName = concepts.find((p) => p.id === sel)?.name ?? null;
+  const selectionHidden = sel != null && !filtered.some((p) => p.id === sel);
 
   return (
     <div className="flex flex-col gap-4">
@@ -93,36 +105,107 @@ export default function PromptBrowser({
         do models produce{hasLabels ? ", and what wins?" : "?"}"
       </Explain>
 
-      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+      {conditional?.clustered && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">Prompt units</span>
+          <Segmented
+            value={keyspace}
+            onChange={(v) => { setKeyspace(v); setSel(null); setVerifiedOnly(false); }}
+            options={[
+              { value: "raw", label: "Individual concepts", title: "Fine-grained prompt features" },
+              { value: "clustered", label: "Behavior clusters", title: "Broader groups of co-firing prompt features" },
+            ]}
+          />
+          {clustered && <span className="text-[11px] text-slate-500">Cluster view summarizes conditional outcomes; elicitation edges remain feature-level.</span>}
+        </div>
+      )}
+
+      {!clustered && coactivation && coactivation.pairs.length > 0 && (
+        <Card>
+          <button onClick={() => setShowCompound((s) => !s)}
+            className="flex w-full items-center justify-between text-left">
+            <h3 className="text-sm font-semibold text-slate-200">
+              Compound prompt concepts — prompt types that co-occur
+            </h3>
+            <span className="text-xs text-slate-500">
+              {coactivation.n_significant} significant pairs · {showCompound ? "hide" : "show"}
+            </span>
+          </button>
+          {showCompound && (
+            <>
+              <p className="mb-2 mt-1 text-[11px] leading-snug text-slate-500">
+                Prompt concepts that fire together above chance (lift = P(A∧B)/P(A)P(B)) — a
+                "compound vocabulary" (e.g. Excel ∧ SQL = data-tooling prompts). Descriptive
+                co-occurrence, symmetric and not causal.
+              </p>
+              <div className="flex flex-col gap-0.5">
+                {coactivation.pairs.slice(0, 25).map((p, i) => {
+                  const mx = coactivation.pairs[0]?.lift ?? 1;
+                  return (
+                    <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
+                      <span className="min-w-0 flex-1 truncate" title={`${p.na} ∧ ${p.nb}`}>
+                        <span className="text-slate-200">{p.na}</span>
+                        <span className="text-slate-500"> ∧ </span>
+                        <span className="text-slate-200">{p.nb}</span>
+                      </span>
+                      <span className="hidden h-2 w-24 shrink-0 overflow-hidden rounded-full bg-edge/40 sm:block">
+                        <span className="block h-full rounded-full bg-accent"
+                          style={{ width: `${Math.round(Math.min(1, p.lift / mx) * 100)}%` }} />
+                      </span>
+                      <span className="w-14 shrink-0 text-right tabular-nums text-slate-300">
+                        ×{p.lift.toFixed(1)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </Card>
+      )}
+
+      <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         {/* prompt-concept list */}
-        <div className="relative">
-        <Card className="max-h-[70vh] overflow-y-auto">
-          <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-1 border-b border-edge/60 bg-panel/95 px-4 pb-2 pt-4 backdrop-blur">
-          <div className="mb-2 flex items-center gap-2">
-            <Search size={14} className="text-slate-500" />
+        <Card className="h-fit lg:sticky lg:top-4">
+          <div className="grid gap-3">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate-500">Search concepts</span>
+              <span className="relative block">
+                <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-slate-500" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="filter prompt concepts…"
-              className="w-full rounded-lg border border-edge bg-ink px-2 py-1.5 text-sm placeholder:text-slate-600"
+                  className="w-full rounded-lg border border-edge bg-ink py-2 pl-8 pr-2 text-sm outline-none placeholder:text-slate-600 focus:border-accent/60"
             />
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate-500">Sort by</span>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "n" | "effect")}
+                className="w-full rounded-lg border border-edge bg-ink px-2.5 py-2 text-sm text-slate-300 outline-none focus:border-accent/60">
+                {hasLabels && <option value="effect">Largest win-rate difference</option>}
+                <option value="n">Most frequent</option>
+              </select>
+            </label>
+            {!clustered && <label className="flex items-start gap-2 rounded-lg bg-ink/35 p-2 text-[11px] leading-snug text-slate-400">
+              <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="mt-0.5 accent-accent" />
+              <span><b className="font-medium text-slate-300">Verified labels only</b><br />Hide prompt labels that did not pass held-out verification.</span>
+            </label>}
+            <div className="flex items-center justify-between border-t border-edge/60 pt-2 text-[11px] text-slate-500">
+              <span>{filtered.length.toLocaleString()} of {concepts.length.toLocaleString()} concepts</span>
+              {(query || verifiedOnly) && <button onClick={() => { setQuery(""); setVerifiedOnly(false); }} className="text-accent hover:text-accent/80">Clear filters</button>}
+            </div>
           </div>
-          <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-400">
-            sort:
-            <Segmented size="xs" value={sortBy} onChange={(v) => setSortBy(v)}
-              options={(hasLabels
-                ? [{ value: "effect", label: "most win-differentiating" }, { value: "n", label: "most frequent" }]
-                : [{ value: "n", label: "most frequent" }]) as { value: "n" | "effect"; label: string }[]} />
-          </div>
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-400">
-            <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="accent-accent" />
-            verified only
-            <span className="text-slate-600">— ✓ = label confirmed on held-out prompts; · = not confirmed</span>
-          </label>
-          </div>
-          <div className="flex flex-col">
+          {selectionHidden && (
+            <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] leading-snug text-amber-200/80">
+              Your selected concept is hidden by the filters; its details remain open.
+            </div>
+          )}
+          <div className="mt-3 max-h-[55vh] overflow-y-auto border-t border-edge/60 pt-2 pr-1">
+            <div className="flex flex-col">
             {filtered.map((p) => {
-              const meta = pmeta.get(p.id);
+              const meta = clustered ? undefined : pmeta.get(p.id);
               return (
                 <button
                   key={p.id}
@@ -147,32 +230,32 @@ export default function PromptBrowser({
             {filtered.length === 0 && (
               <p className="px-1 py-3 text-sm text-slate-500">No prompt concept matches “{query}”.</p>
             )}
+            </div>
           </div>
         </Card>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-2xl bg-gradient-to-t from-panel to-transparent" />
-        </div>
 
         {/* detail for the selected prompt concept */}
         {sel == null ? (
           <Card>Pick a prompt concept.</Card>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="min-w-0 flex flex-col gap-4">
             <Card>
               <h3 className="text-lg font-semibold leading-snug text-slate-100">
                 <ConceptLabel id={sel} name={selName} wrap />
                 <span className="ml-2 whitespace-nowrap rounded bg-edge/60 px-1.5 py-0.5 align-middle font-mono text-[10px] font-normal text-slate-500">
-                  p{sel}
+                  {clustered ? "cluster " : "p"}{sel}
                 </span>
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
                 what this prompt tends to produce{hasLabels ? ", and what wins it" : ""}
               </p>
             </Card>
-            <ElicitsPanel elicitation={elicitation} pc={sel} onJumpFeature={onJumpFeature} />
-            {hasLabels && <WinsPanel cond={cond} pc={sel} onJumpFeature={onJumpFeature} />}
+            {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} onJumpFeature={onJumpFeature} />}
+            {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
             {/* report_battles keys concepts by their raw name (bare id string when unnamed),
                 NOT the "feature N" display label — match that, else examples never join. */}
-            <ExamplesPanel reportBattles={reportBattles} conceptName={selName ?? String(sel)} />
+            {!clustered && <ExamplesPanel reportBattles={reportBattles} conceptName={selName ?? String(sel)}
+              canLoad={canLoadExamples} onLoad={onLoadExamples} />}
           </div>
         )}
       </div>
@@ -180,52 +263,100 @@ export default function PromptBrowser({
   );
 }
 
-function ElicitsPanel({ elicitation, pc, onJumpFeature }: { elicitation: ElicitationData | null; pc: number; onJumpFeature?: (cf: number) => void }) {
+function ElicitsPanel({ elicitation, pc, promptName, onJumpFeature }: {
+  elicitation: ElicitationData | null;
+  pc: number;
+  promptName: string | null;
+  onJumpFeature?: (cf: number) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null);
   const rows = useMemo(() => {
     if (!elicitation) return [];
     const nameOf = new Map(elicitation.response_concepts.map((c) => [c.id, c.concept]));
-    const edges = elicitation.edges.filter((e) => e.px === pc && e.l2 > 0)
+    const edges = elicitation.edges.filter((e) => e.px === pc && e.l2 > 0 && (showAll || e.sig))
       .sort((a, b) => b.lift - a.lift).slice(0, 14);
     const maxL2 = Math.max(0.5, ...edges.map((e) => e.l2));
-    return edges.map((e) => ({ id: e.cy, name: nameOf.get(e.cy) ?? null, lift: e.lift, pyx: e.pyx, l2: e.l2, sig: e.sig, w: e.l2 / maxL2 }));
-  }, [elicitation, pc]);
+    return edges.map((e) => ({ id: e.cy, name: nameOf.get(e.cy) ?? null, lift: e.lift,
+      pyx: e.pyx, l2: e.l2, sig: e.sig, nx: e.nx, nco: e.nco, w: e.l2 / maxL2 }));
+  }, [elicitation, pc, showAll]);
+  useEffect(() => { setSelected(null); }, [pc]);
+  useEffect(() => {
+    if (selected == null || !rows.some((r) => r.id === selected))
+      setSelected(rows[0]?.id ?? null);
+  }, [rows, selected]);
+  const active = rows.find((r) => r.id === selected) ?? null;
   return (
-    <Card>
+    <div className="flex flex-col gap-3">
+      <Card>
       <h4 className="text-sm font-semibold text-slate-200">Elicits these behaviours</h4>
       <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
-        response concepts that co-activate with this prompt (lift = P(fires | this prompt) / base rate)
+        Response concepts that co-activate with this prompt. Select one to inspect a
+        prompt–response example carrying both concepts.
       </p>
+      {elicitation && elicitation.edges.some((e) => e.px === pc && e.l2 > 0 && !e.sig) && (
+        <label className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-500">
+          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-accent" />
+          show non-significant estimates
+        </label>
+      )}
       {rows.length === 0 ? (
         <p className="px-1 py-3 text-sm text-slate-500">No elicited response concept in the bundle.</p>
       ) : (
         rows.map((r) => (
           <ConceptBarRow key={r.id} id={r.id} name={r.name}
             value={`×${r.lift.toFixed(1)}`} title={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
+            detail={`${r.nco.toLocaleString()} co-occurrences · ${r.nx.toLocaleString()} prompt activations`}
             width={r.w} color="rgba(96,165,250,0.85)" dim={!r.sig}
-            onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
+            selected={selected === r.id} onClick={() => setSelected(r.id)} />
         ))
       )}
-    </Card>
+      </Card>
+      {active && <JointEvidence promptFeature={pc} responseFeature={active.id}
+        promptName={promptName} responseName={active.name} kind="elicitation"
+        onOpenBehavior={onJumpFeature ? () => onJumpFeature(active.id) : undefined} />}
+    </div>
   );
 }
 
-function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; pc: number; onJumpFeature?: (cf: number) => void }) {
+function WinsPanel({ cond, pc, promptName, showEvidence, onJumpFeature }: {
+  cond: ConditionalData | null;
+  pc: number;
+  promptName: string | null;
+  showEvidence: boolean;
+  onJumpFeature?: (cf: number) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null);
   const rows = useMemo(() => {
     if (!cond) return [];
     const nameOf = new Map(cond.features.map((f) => [f.id, f.concept]));
-    const cells = cond.cells.filter((c) => c.pc === pc)
+    const cells = cond.cells.filter((c) => c.pc === pc && (showAll || c.sig))
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 14);
     const maxD = Math.max(0.02, ...cells.map((c) => Math.abs(c.delta)));
     return cells.map((c) => ({ id: c.f, name: nameOf.get(c.f) ?? null, delta: c.delta, sig: c.sig,
       nf: c.nf ?? null, n: c.n ?? null, w: Math.abs(c.delta) / maxD }));
-  }, [cond, pc]);
+  }, [cond, pc, showAll]);
+  useEffect(() => { setSelected(null); }, [pc]);
+  useEffect(() => {
+    if (selected == null || !rows.some((r) => r.id === selected))
+      setSelected(rows[0]?.id ?? null);
+  }, [rows, selected]);
+  const active = rows.find((r) => r.id === selected) ?? null;
   return (
-    <Card>
+    <div className="flex flex-col gap-3">
+      <Card>
       <h4 className="text-sm font-semibold text-slate-200">What wins here</h4>
       <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
         Δwin-rate when a response shows this behaviour vs not, on this prompt type
-        (length-controlled). Faded = not significant.
+        (length-controlled). Select a row to inspect matched evidence. Faded = not significant.
       </p>
+      {cond && cond.cells.some((c) => c.pc === pc && !c.sig) && (
+        <label className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-500">
+          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-accent" />
+          show non-significant estimates
+        </label>
+      )}
       {rows.length === 0 ? (
         <p className="px-1 py-3 text-sm text-slate-500">
           {cond ? "No response concept for this prompt type." : "No conditional win data in this bundle."}
@@ -236,15 +367,25 @@ function WinsPanel({ cond, pc, onJumpFeature }: { cond: ConditionalData | null; 
             value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
             title={`Δwin ${r.delta >= 0 ? "+" : ""}${(r.delta * 100).toFixed(1)}pp${r.sig ? " (significant)" : " (ns)"}${
               r.nf != null ? ` · fires in ${r.nf} of ${r.n ?? "?"} battles of this type` : r.n != null ? ` · n=${r.n}` : ""}`}
+            detail={r.nf != null ? `${r.nf.toLocaleString()} fires / ${(r.n ?? 0).toLocaleString()} battles` : r.n != null ? `${r.n.toLocaleString()} battles` : undefined}
             width={r.w} color={divergeColor(r.delta, WINRATE_REF)} dim={!r.sig}
-            onClick={onJumpFeature ? () => onJumpFeature(r.id) : undefined} />
+            selected={selected === r.id} onClick={() => setSelected(r.id)} />
         ))
       )}
-    </Card>
+      </Card>
+      {showEvidence && active && <JointEvidence promptFeature={pc} responseFeature={active.id}
+        promptName={promptName} responseName={active.name} kind="preference"
+        onOpenBehavior={onJumpFeature ? () => onJumpFeature(active.id) : undefined} />}
+    </div>
   );
 }
 
-function ExamplesPanel({ reportBattles, conceptName }: { reportBattles: ReportBattles | null; conceptName: string }) {
+function ExamplesPanel({ reportBattles, conceptName, canLoad, onLoad }: {
+  reportBattles: ReportBattles | null | undefined;
+  conceptName: string;
+  canLoad?: boolean;
+  onLoad?: () => void;
+}) {
   const [ex, nAll] = useMemo(() => {
     if (!reportBattles) return [[], 0] as const;
     // gather across ALL models, then take a deterministic spread — object-key order
@@ -256,6 +397,20 @@ function ExamplesPanel({ reportBattles, conceptName }: { reportBattles: ReportBa
     const picked = k === 0 ? [] : Array.from({ length: k }, (_, i) => all[Math.floor((i * all.length) / k)]);
     return [picked, all.length] as const;
   }, [reportBattles, conceptName]);
+  if (reportBattles === undefined && canLoad)
+    return (
+      <Card className="border-dashed">
+        <h4 className="text-sm font-semibold text-slate-200">Example prompts</h4>
+        <p className="mt-1 text-xs text-slate-500">Transcripts are an optional large artifact and are not loaded until requested.</p>
+        <button onClick={onLoad} className="mt-3 rounded-lg border border-edge bg-ink/50 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-accent/40 hover:text-slate-100">
+          Load example prompts
+        </button>
+      </Card>
+    );
+  if (reportBattles === undefined)
+    return (
+      <Card><p className="text-xs text-slate-500">Loading example prompts…</p></Card>
+    );
   if (!reportBattles) return null; // examples not in this bundle at all — nothing to promise
   const tone = (o: string) => (o === "win" ? "text-good" : o === "loss" ? "text-bad" : "text-slate-400");
   if (ex.length === 0)

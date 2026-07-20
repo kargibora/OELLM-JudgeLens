@@ -23,9 +23,9 @@ function PointTip({ active, payload }: any) {
   return (
     <div className="rounded-lg border border-edge bg-ink/95 p-2 text-xs text-slate-200">
       <div className="mb-1 font-medium">{d.concept ?? `feature ${d.feature_id}`}</div>
-      <div>win assoc: {d.win_assoc?.toFixed(3) ?? "—"}</div>
+      <div>raw reward correlation: {d.correlation?.toFixed(3) ?? "—"}</div>
       <div>length covariance: {d.corr_confound_len?.toFixed(3) ?? "—"}</div>
-      <div>reward after controlling length: {d.correlation_resid_len?.toFixed(3) ?? "—"}</div>
+      <div>partial reward correlation: {d.correlation_resid_len?.toFixed(3) ?? "—"}</div>
       <div className="mt-1 text-slate-400">
         {d.confound_entangled ? "length/style-entangled candidate" : "reward survives length control"}
         {d.fidelity_pass ? " · verified" : " · unverified"}
@@ -38,9 +38,14 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
   const data = useMemo(
     () =>
       (bias ?? []).filter(
-        (b) => b.win_assoc != null && b.corr_confound_len != null
+        (b) => b.correlation != null && b.correlation_resid_len != null && b.corr_confound_len != null
       ),
     [bias]
+  );
+
+  const screened = useMemo(
+    () => [...data].sort((a, b) => Math.abs(b.correlation ?? 0) - Math.abs(a.correlation ?? 0)).slice(0, 12),
+    [data]
   );
 
   if (!bias)
@@ -52,38 +57,32 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
     );
 
   const nFlag = data.filter((d) => d.confound_entangled).length;
-  // per-feature verdict: for the rewarded features, does the reward survive length control?
-  const rewarded = useMemo(
-    () => data.filter((d) => (d.win_assoc ?? 0) > 0).sort((a, b) => (b.win_assoc ?? 0) - (a.win_assoc ?? 0)).slice(0, 12),
-    [data]
-  );
-
   return (
     <Card>
-      <h2 className="text-lg font-semibold">Bias screen — is the reward real, or just length?</h2>
+      <h2 className="text-lg font-semibold">Length-confound screen</h2>
       <div className="my-3">
         <Explain>
-          For each rewarded behaviour, does its reward <b>survive</b> once we control for
-          answer length, or is it <b>length-driven</b>? A behaviour whose reward largely
+          For each feature, does its preference correlation <b>survive</b> once we control for
+          answer length, or is it <b>length-entangled</b>? A feature whose association largely
           collapses when length is partialled out is a candidate for skepticism — you can’t
           separate quality from verbosity. {nFlag} of {data.length} screened features look
           length-entangled. (This is a screening flag, not proof the feature is fake.)
         </Explain>
       </div>
 
-      {rewarded.length > 0 && (
+      {screened.length > 0 && (
         <div className="mb-4">
-          <h3 className="mb-1 text-sm font-semibold text-slate-200">Does the reward survive length control?</h3>
+          <h3 className="mb-1 text-sm font-semibold text-slate-200">Raw correlation → partial correlation</h3>
           <div className="flex flex-col">
-            {rewarded.map((d) => {
-              const maxW = Math.max(0.02, ...rewarded.map((r) => Math.abs(r.win_assoc ?? 0)));
+            {screened.map((d) => {
+              const maxW = Math.max(0.02, ...screened.map((r) => Math.abs(r.correlation ?? 0)));
               return (
                 <div key={d.feature_id} className="flex items-center gap-2">
                   <div className="min-w-0 flex-1">
                     <ConceptBarRow id={d.feature_id} name={d.concept}
-                      value={`${d.win_assoc?.toFixed(2) ?? "—"} → ${d.correlation_resid_len?.toFixed(2) ?? "—"}`}
-                      title={`raw reward ${d.win_assoc?.toFixed(3) ?? "—"} → after length control ${d.correlation_resid_len?.toFixed(3) ?? "—"}`}
-                      width={Math.abs(d.win_assoc ?? 0) / maxW}
+                      value={`${d.correlation?.toFixed(2) ?? "—"} → ${d.correlation_resid_len?.toFixed(2) ?? "—"}`}
+                      title={`raw reward correlation ${d.correlation?.toFixed(3) ?? "—"} → partial correlation after length control ${d.correlation_resid_len?.toFixed(3) ?? "—"}`}
+                      width={Math.abs(d.correlation ?? 0) / maxW}
                       color={d.confound_entangled ? "rgba(251,191,36,0.8)" : "rgba(52,211,153,0.8)"}
                       dim={!d.fidelity_pass} />
                   </div>
@@ -102,24 +101,24 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
           <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" vertical={false} />
           <XAxis
             type="number"
-            dataKey="win_assoc"
-            name="win assoc"
+            dataKey="correlation"
+            name="raw reward correlation"
             stroke="#64748b"
             fontSize={12}
             tickLine={false}
             axisLine={false}
-            label={{ value: "win association →", position: "bottom", fill: "#64748b", fontSize: 12 }}
+            label={{ value: "raw preference correlation →", position: "bottom", fill: "#64748b", fontSize: 12 }}
           />
           <YAxis
             type="number"
-            dataKey="corr_confound_len"
-            name="length covariance"
+            dataKey="correlation_resid_len"
+            name="partial reward correlation"
             stroke="#64748b"
             fontSize={12}
             tickLine={false}
             axisLine={false}
             label={{
-              value: "length covariance →",
+              value: "after controlling length →",
               angle: -90,
               position: "insideLeft",
               fill: "#64748b",
@@ -128,8 +127,7 @@ export default function BiasScreen({ bias }: { bias: BiasRow[] | null }) {
           />
           <ZAxis range={[40, 40]} />
           <ReferenceLine x={0} stroke="#475569" />
-          <ReferenceLine y={0.3} stroke="#f59e0b" strokeDasharray="4 4" />
-          <ReferenceLine y={-0.3} stroke="#f59e0b" strokeDasharray="4 4" />
+          <ReferenceLine y={0} stroke="#475569" />
           <Tooltip content={<PointTip />} />
           <Scatter data={data}>
             {data.map((d) => (

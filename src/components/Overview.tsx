@@ -1,3 +1,4 @@
+import { Activity, ArrowRight, Bot, MessageSquareText } from "lucide-react";
 import type { Bundle, Feature } from "../types";
 import { Card, Caveat, Explain, Metric, VerifiedBadge } from "./ui";
 import { fmt } from "../data";
@@ -10,9 +11,11 @@ const pp = (x: number) => `${x >= 0 ? "+" : ""}${Math.round(x * 100)}pp`;
 
 export default function Overview({
   bundle,
+  onNavigate,
   onJumpFeature,
 }: {
   bundle: Bundle;
+  onNavigate?: (view: "prompts" | "behaviors" | "models") => void;
   onJumpFeature?: (cf: number) => void;
 }) {
   const m = bundle.meta;
@@ -57,6 +60,43 @@ export default function Overview({
 
   return (
     <div className="flex flex-col gap-6">
+      <section className="overflow-hidden rounded-3xl border border-edge bg-hero px-5 py-6 shadow-2xl sm:px-7 sm:py-8">
+        <div className="max-w-3xl">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent-soft">
+            {m.input_rep === "difference" ? "Difference-SAE analysis" : "Response behavior analysis"}
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
+            Find what models do, when they do it, and how reliably we know.
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
+            Start from a user request, a response behavior, or a model. Every route leads
+            back to the evidence: activation examples, verification results, support, and
+            preference associations.
+          </p>
+        </div>
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          {[
+            { view: "prompts" as const, icon: MessageSquareText, title: "Start with a prompt", body: "What behaviors do these requests elicit, and what tends to win?" },
+            { view: "behaviors" as const, icon: Activity, title: "Start with a behavior", body: "Where does it appear, which prompts trigger it, and is the label faithful?" },
+            { view: "models" as const, icon: Bot, title: "Start with a model", body: "What does it do more or less, and where is it strong or weak?" },
+          ].map(({ view, icon: Icon, title, body }) => (
+            <button
+              key={view}
+              onClick={() => onNavigate?.(view)}
+              disabled={!onNavigate}
+              className="group rounded-2xl border border-edge/80 bg-ink/45 p-4 text-left transition hover:-translate-y-0.5 hover:border-accent/40 hover:bg-panel/80"
+            >
+              <div className="flex items-center justify-between">
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent/10 text-accent-soft"><Icon size={17} /></span>
+                <ArrowRight size={16} className="text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-accent-soft" />
+              </div>
+              <h3 className="mt-3 text-sm font-semibold text-slate-100">{title}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">{body}</p>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 ${hasLabels ? "lg:grid-cols-6" : "lg:grid-cols-4"}`}>
         <Metric label="Reconstruction" value={fmt(m.ev, 3)} sub={`${lensKind} lens EV`} />
         <Metric label="Verified features" value={`${m.n_verified ?? "—"} / ${namedDenom}`} sub="of named" />
@@ -73,8 +113,8 @@ export default function Overview({
 
       <Explain>
         <b>What this is.</b> {howBuilt}. <b>Reconstruction</b> = how much of the embeddings the
-        features capture. <b>Verified features</b> = axes an independent LLM confirmed are real
-        (of the {namedDenom} named).{hasLabels && (
+        features capture. <b>Verified features</b> = labels an LLM verifier reproduced on
+        held-out examples (of the {namedDenom} named).{hasLabels && (
           <> <b>Predicts win rate</b> = how well those axes predict each model’s real win rate
           {isLoo
             ? ", with every model held out of its own prediction — higher means the diagnosis genuinely generalises."
@@ -87,7 +127,8 @@ export default function Overview({
         <p className="text-sm leading-relaxed text-slate-300">
           A {lensKind} SAE over <span className="text-slate-100">{m.embed_model_id ?? "the embedding model"}</span>{" "}
           response embeddings, trained on {(m.n_battles ?? 0).toLocaleString()} arena battles. It found{" "}
-          <span className="text-slate-100">{m.n_verified ?? "—"}</span> human-verified behaviour features.
+          <span className="text-slate-100">{m.n_verified ?? "—"}</span> behavior labels that passed
+          an LLM verification step on held-out examples.
           {r2 != null && m.n_models != null && (
             <> A predictor built only from those features (weighted by how much humans reward each)
               explains <span className="text-good">{(r2 * 100).toFixed(0)}%</span> of the variance
@@ -121,7 +162,7 @@ export default function Overview({
             viewer shows concept structure only (what concepts exist and how prompts and responses
             relate).{" "}</>
           )}
-          Concepts are <b>LLM-assigned labels</b>; ✓ marks ones an independent LLM confirmed on
+          Concepts are <b>LLM-assigned labels</b>; ✓ marks ones an LLM verifier reproduced on
           held-out pairs. {hasLabels && (verifiedBasis
             ? "Showing verified, significant axes only. "
             : "No verified axes yet — showing significant-but-unverified axes; treat the labels as provisional. ")}

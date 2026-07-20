@@ -13,7 +13,7 @@ export function Explain({ children }: { children: React.ReactNode }) {
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl border border-edge bg-panel/70 p-4 shadow-lg ${className}`}>
+    <div className={`min-w-0 rounded-2xl border border-edge bg-panel/70 p-4 shadow-sm ${className}`}>
       {children}
     </div>
   );
@@ -137,7 +137,7 @@ export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number |
       className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
         pass ? "bg-good/15 text-good" : "bg-amber-500/15 text-amber-400"
       }`}
-      title={pass ? "an independent LLM confirmed this label on held-out pairs" : "an independent LLM could NOT confirm this label on held-out pairs"}
+      title={pass ? "an LLM verifier reproduced this label on held-out pairs" : "an LLM verifier could not reproduce this label under the configured held-out checks"}
     >
       {pass ? "✓ verified" : "✗ failed check"}
       {n != null ? ` · n=${n}` : ""}
@@ -157,27 +157,31 @@ export const clip = (s: string, n = 200) => (s.length > n ? s.slice(0, n - 1) + 
 // and a right-aligned value. Clickable when `onClick` is given (renders a button). The
 // single shared row for both hubs' Elicits / Activated-by / Reward / Wins-here lists.
 export function ConceptBarRow({
-  id, name, value, title, width, color, onClick, dim,
+  id, name, value, detail, title, width, color, onClick, dim, selected,
 }: {
   id: number;
   name: string | null | undefined;
   value: string;
+  detail?: string;
   title?: string;
   width: number; // 0..1 of the bar track
   color: string;
   onClick?: () => void;
   dim?: boolean; // e.g. non-significant rows
+  selected?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`flex w-full items-center gap-2 py-0.5 text-left text-xs transition-colors duration-150 ${
-        onClick ? "rounded hover:bg-edge/30" : "cursor-default"
-      } ${dim ? "opacity-70" : ""}`}
+      aria-pressed={onClick ? selected : undefined}
+      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors duration-150 ${
+        onClick ? "hover:bg-edge/30" : "cursor-default"
+      } ${selected ? "bg-accent/10 ring-1 ring-inset ring-accent/40" : ""} ${dim ? "opacity-70" : ""}`}
     >
       <span className="min-w-0 flex-1">
         <ConceptLabel id={id} name={name} wrap className="text-slate-300" />
+        {detail && <span className="mt-0.5 block text-[10px] tabular-nums text-slate-600">{detail}</span>}
       </span>
       <span className="hidden h-2 w-28 shrink-0 overflow-hidden rounded-full bg-edge/40 sm:block">
         <span
@@ -220,11 +224,13 @@ export function Segmented<T extends string>({
 }) {
   const pad = size === "sm" ? "px-2.5 py-1 text-xs" : "px-1.5 py-0.5 text-[11px]";
   return (
-    <div className="inline-flex w-fit rounded-lg border border-edge bg-ink/40 p-0.5">
+    <div role="group" className="inline-flex w-fit rounded-lg border border-edge bg-ink/40 p-0.5">
       {options.map((o) => (
         <button
+          type="button"
           key={o.value}
           title={o.title}
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={`rounded-md transition-colors duration-150 ${pad} ${
             value === o.value ? "bg-accent text-white shadow-sm" : "text-slate-400 hover:text-slate-200"

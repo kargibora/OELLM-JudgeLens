@@ -1,6 +1,11 @@
 node_modules
 dist
 dist-ssr
+lib
+*.tgz
 *.local
 .vite
 .DS_Store
+tsconfig.tsbuildinfo
+public/data/
+public/runs/

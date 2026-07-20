@@ -32,9 +32,13 @@ export interface BundleManifest {
 }
 export const BUNDLE_SCHEMA_VERSION = 2;
 
+export type BehaviorCategory = "general" | "context_specific" | "prompt_content" | "unclassified";
+
 export interface Feature {
   feature_id: number;
   concept?: string;
+  type?: string; // coarse label: capability | format | style | topic | safety
+  corr_confound_len?: number; // |corr|>=0.3 ⇒ "does more" may be "does longer"
   correlation?: number;
   sign?: number;
   p_bonferroni?: number;
@@ -46,6 +50,26 @@ export interface Feature {
   f1?: number;
   fp_rate?: number; // false-positive rate on silent pairs
   agreement?: number;
+  // semantic presence calibration: unlike fidelity (valid on held-out extremes), this
+  // supports corpus-level rates above a learned feature-specific activation threshold.
+  calibration_status?: "calibrated" | "extreme_only" | "not_calibratable";
+  semantic_threshold?: number | null;
+  threshold_quantile?: number | null;
+  precision_lcb?: number | null;
+  semantic_coverage?: number | null;
+  silent_concept_rate?: number | null;
+  semantic_role?: string;
+  requested_share?: number | null;
+  presence_pass?: boolean;
+  semantic_presence_rate?: number | null;
+  prompt_dependence_nmi?: number | null;
+  prompt_context_js?: number | null;
+  effective_prompt_contexts?: number | null;
+  max_prompt_context_share?: number | null;
+  n_supported_prompt_contexts?: number;
+  paired_choice_ratio?: number | null;
+  behavior_category?: BehaviorCategory;
+  top_prompt_contexts_json?: string;
   // win relevance: raw gap AND length-controlled AME (WIMHF App. A.2)
   win_assoc?: number;
   fire_rate?: number;
@@ -83,6 +107,9 @@ export interface DiagnosisRow {
   // bare effects. Absent in older bundles → no significance shown.
   fire_pos?: number[];
   fire_neg?: number[];
+  behavior_category?: BehaviorCategory[];
+  cross_context_stable?: boolean[];
+  context_q_value?: (number | null)[];
   prompt_types?: { concept: string; win_rate: number; n: number }[];
   // per-model prompt-concept -> response-concept -> within-prompt Δwin edges
   relations?: { prompt_concept: string; response_concept: string; delta_win: number; n: number }[];
@@ -93,6 +120,13 @@ export interface Diagnosis {
   concepts: string[];
   models: string[];
   rows: Record<string, DiagnosisRow>;
+  // "absolute" = fire_rate is P(z_self>0) prevalence (share of the model's OWN answers
+  // expressing the behaviour); "contrast" = it's the bank disagreement rate (how often the
+  // model differs from its opponent), for a difference lens. Absent in older bundles →
+  // treat as "contrast" (that's what pre-fix bundles actually held). Governs the "Does a
+  // lot" vs "Distinguishes from opponents" labeling.
+  fire_rate_kind?: "absolute" | "contrast";
+  presence_basis?: ("semantic_threshold" | "positive_nonzero")[];
   clusters?: number[]; // cluster_id parallel to `features`
   behaviors?: Record<string, string>;
   // pool totals over ALL battles (incl. each model's own — subtract fire_pos/fire_neg
@@ -125,6 +159,24 @@ export interface ModelExample {
 }
 export type ExamplesByModel = Record<string, Record<string, ModelExample[]>>;
 
+// Prompt-feature × response-feature evidence, sharded by prompt feature. These are
+// concrete responses for which both positive-pole codes are nonzero, ranked by balanced
+// joint activation. They support relationship drill-ins; they do not establish causality.
+export interface JointExample {
+  prompt_activation: number;
+  response_activation: number;
+  joint_score: number;
+  prompt: string;
+  response: string;
+  model: string;
+  side: "a" | "b";
+  outcome?: "win" | "loss" | "tie";
+}
+export interface JointExampleShard {
+  prompt_feature: number;
+  examples: Record<string, JointExample[]>;
+}
+
 export interface MapPoint {
   x: number;
   y: number;
@@ -153,9 +205,9 @@ export interface MapData {
 export interface PromptMapPoint {
   x: number;
   y: number;
-  f: number; // dominant prompt feature_id
+  f: number; // dominant positive-pole prompt feature_id, or -1 when none fires
   m?: number; // its activation magnitude
-  pc: number; // prompt concept/cluster key (matches delta keyspace)
+  pc: number; // prompt concept/cluster key (matches delta keyspace), or -1
   ma: string;
   mb: string;
   win: "A" | "B"; // human-preferred slot
@@ -299,6 +351,34 @@ export interface HeadToHead {
   pairs: H2HPair[];
 }
 
+// --- BYO model comparison (model_compare.json) — thin smoke view -----------
+export interface MCConcept { f: number; concept: string }
+export interface MCPowerRow { f: number; mean: number | null; fire: number | null }
+export interface MCPair { a: string; b: string; n: number; n_decisive: number }
+export interface MCContrastRow {
+  f: number; contrast: number | null;
+  pa: number | null; pb: number | null; fa: number | null; fb: number | null; won: number | null;
+}
+export interface MCDataset {
+  source: string; n_battles: number;
+  models: { name: string; n: number }[];
+  pairs: MCPair[];
+  model_power: Record<string, MCPowerRow[]>;
+  pair_contrast: Record<string, MCContrastRow[]>;
+}
+export interface ModelCompare {
+  concepts: MCConcept[]; n_concepts: number; verified_only: boolean; datasets: MCDataset[];
+}
+
+// --- Prompt-concept co-activation (coactivation.json) — compound prompts ----
+export interface CoactPair { a: number; b: number; na: string; nb: string; lift: number; log2: number }
+export interface Coactivation { n_pairs: number; n_significant: number; pairs: CoactPair[] }
+
+// NOTE: the per-model "omissions" surface (omissions.json) was retired — winner-loser
+// concept gaps are ≤5pp (presence ≠ quality; the prompt fixes content for both sides),
+// so "what a model lacks that wins" isn't supportable. The Behavioural profile replaced
+// it. The type + loader were removed with it.
+
 export interface Bundle {
   meta: Meta;
   manifest: BundleManifest | null; // null = legacy bundle without a manifest
@@ -312,4 +392,6 @@ export interface Bundle {
   elicitation: ElicitationData | null;
   reportBattles: ReportBattles | null;
   headToHead: HeadToHead | null;
+  modelCompare: ModelCompare | null;
+  coactivation: Coactivation | null;
 }

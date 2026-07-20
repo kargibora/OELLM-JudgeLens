@@ -147,10 +147,13 @@ export default function PromptMapView(
     if (best) setPicked(best.pt);
   };
 
-  const hoverLabel = (p: PromptMapPoint): string =>
-    mode === "behavior"
+  const hoverLabel = (p: PromptMapPoint): string => {
+    if (mode === "behavior" && p.pc < 0) return "no verified prompt behavior fired";
+    if (p.f < 0) return "no verified prompt feature fired";
+    return mode === "behavior"
       ? map.behaviors?.[String(p.pc)] ?? `behavior ${p.pc}`
-      : map.concepts[featIdx.get(p.f) ?? 0] ?? `feature ${p.f}`;
+      : map.concepts[featIdx.get(p.f) ?? -1] ?? `feature ${p.f}`;
+  };
 
   return (
     <div className="flex flex-col gap-4">

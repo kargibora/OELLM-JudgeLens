@@ -165,7 +165,8 @@ export default function MapView({ map }: { map: MapData | null }) {
     <div className="flex flex-col gap-4">
       <Explain>
         Each dot is one battle (a prompt with two responses). They’re placed by UMAP so battles with
-        similar chosen-vs-rejected differences sit close together — tight clusters share a behaviour.
+        similar A-vs-B response contrasts sit close together — tight clusters share an axis pattern.
+        The orientation is the stored A/B order, not winner-vs-loser.
         <b> Colour</b> = the dominant behaviour. <b>Bigger/brighter</b> dots express it more strongly;
         faint dots are weak/noise (drag <i>min activation</i> to hide them). <b>Click a dot</b> to read
         its prompt and both responses — a quick way to check the map makes sense.
