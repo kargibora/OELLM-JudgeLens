@@ -28,7 +28,7 @@ function CountHistogram({ histogram }: { histogram: number[] }) {
         <div
           key={i}
           title={`${count.toLocaleString()} responses activate ${i} concept${i === 1 ? "" : "s"}`}
-          className="flex-1 min-w-[2px] bg-sky-500/70 hover:bg-sky-400 rounded-t"
+          className="flex-1 min-w-[2px] bg-accent/60 hover:bg-accent rounded-t"
           style={{ height: `${Math.max(1, (count / max) * 100)}%` }}
         />
       ))}
@@ -43,9 +43,9 @@ function GroupBars({ rates, groups }: { rates?: Record<string, number>; groups: 
   return (
     <div className="flex gap-1 items-end h-6" aria-hidden>
       {groups.map((g) => (
-        <div key={g} className="flex-1 flex flex-col justify-end" title={`${g}: ${pct(rates[g] ?? 0)}`}>
+        <div key={g} className="flex-1 h-full flex flex-col justify-end" title={`${g}: ${pct(rates[g] ?? 0)}`}>
           <div
-            className="bg-violet-500/70 rounded-sm"
+            className="bg-accent-soft/70 rounded-sm"
             style={{ height: `${Math.max(2, ((rates[g] ?? 0) / max) * 100)}%` }}
           />
         </div>
@@ -113,7 +113,7 @@ export default function ConceptDistribution({
           />
         </div>
         <div className="mt-4">
-          <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
             Concepts activated per response
           </div>
           <CountHistogram histogram={dist.concepts_per_row.histogram} />
@@ -127,14 +127,14 @@ export default function ConceptDistribution({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter concepts…"
-            className="flex-1 min-w-[12rem] rounded border border-slate-300 px-2 py-1 text-sm"
+            className="flex-1 min-w-[12rem] rounded-lg border border-edge/70 bg-ink/60 px-2.5 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent/50 focus:outline-none"
             aria-label="Filter concepts"
           />
           <span className="text-xs text-slate-500">{rows.length.toLocaleString()} shown</span>
         </div>
 
         {dist.groups.length > 1 && (
-          <div className="text-xs text-slate-500 mb-2">
+          <div className="text-[11px] text-slate-500 mb-2">
             Bars on the right compare fire rate across{" "}
             <span className="font-medium">{dist.group_column}</span>:{" "}
             {dist.groups.join(" · ")}
@@ -150,15 +150,15 @@ export default function ConceptDistribution({
             <button
               type="button"
               onClick={() => onSelectConcept?.(f.feature_id)}
-              className="w-full h-full flex items-center gap-3 px-2 text-left hover:bg-slate-50 rounded"
+              className="w-full h-full flex items-center gap-3 px-2 text-left hover:bg-edge/40 rounded"
               title={conceptLabel(f.feature_id, f.concept)}
             >
               <div className="w-64 shrink-0 truncate text-sm">
                 <ConceptLabel id={f.feature_id} name={f.concept} />
               </div>
-              <div className="flex-1 h-2 bg-slate-100 rounded overflow-hidden">
+              <div className="flex-1 h-2 bg-edge/40 rounded overflow-hidden">
                 <div
-                  className="h-full bg-sky-500"
+                  className="h-full bg-accent/80"
                   style={{ width: `${Math.max(1, (f.fire_rate / maxRate) * 100)}%` }}
                 />
               </div>

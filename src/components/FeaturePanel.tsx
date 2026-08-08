@@ -170,7 +170,7 @@ export default function FeaturePanel({
           <div className="mt-3 border-t border-edge/60 pt-2 pr-1">
             <VirtualList
               items={rows}
-              rowHeight={46}
+              rowHeight={58}
               height={Math.round(typeof window === "undefined" ? 520 : window.innerHeight * 0.58)}
               emptyMessage="No feature matches."
               renderRow={(f) => {
@@ -186,7 +186,9 @@ export default function FeaturePanel({
                     </span>
                   )}
                   <span className="min-w-0 flex-1">
-                    <ConceptLabel id={f.feature_id} name={f.concept} wrap />
+                    <span className="block overflow-hidden" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                      <ConceptLabel id={f.feature_id} name={f.concept} wrap />
+                    </span>
                     <span className="block text-[10px] tabular-nums text-slate-600" title="fire rate: % of responses this feature appears in">
                       fires {f.generality != null ? `${(f.generality * 100).toFixed(f.generality < 0.01 ? 1 : 0)}%` : "—"}
                     </span>

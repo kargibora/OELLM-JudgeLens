@@ -508,8 +508,14 @@ export interface CoactivationPair {
   rows: number[];
 }
 
+export interface CoactivationExample {
+  prompt: string;
+  response: string;
+}
+
 export interface ConceptCoactivation {
   n_rows: number;
+  examples?: Record<string, CoactivationExample>;
   min_pair_count: number;
   truncated: boolean;
   code_array: string;
