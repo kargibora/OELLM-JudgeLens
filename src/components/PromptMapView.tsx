@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PromptMapData, PromptMapPoint } from "../types";
 import { Card, Explain } from "./ui";
+import { extent } from "./VirtualList";
 
 // duplicated from MapView for now (standalone by design — factor a shared
 // ScatterCanvas later).
@@ -85,8 +86,8 @@ export default function PromptMapView(
 
     const xs = map.points.map((p) => p.x);
     const ys = map.points.map((p) => p.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const [minX, maxX] = extent(xs);
+    const [minY, maxY] = extent(ys);
     const pad = 24;
     const sx = (x: number) => pad + ((x - minX) / (maxX - minX || 1)) * (width - 2 * pad);
     const sy = (y: number) => pad + (1 - (y - minY) / (maxY - minY || 1)) * (HEIGHT - 2 * pad);

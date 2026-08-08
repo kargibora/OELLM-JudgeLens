@@ -8,11 +8,12 @@ import {
 } from "./ui";
 import { fmt, pct, useFeatureExamples } from "../data";
 import JointEvidence from "./JointEvidence";
+import { VirtualList } from "./VirtualList";
 
 // Feature-first hub (master-detail). Left: browse/sort/filter response features. Right:
 // the selected feature's fire rate + reward (header, always visible) and three sub-tabs —
 // Activated by (feature→prompt), Reward (Δwin by prompt type), Examples. Folds in the old
-// Features table, Win relevance, Feature detail, General behaviours, and Elicits' feature
+// Features table, Win relevance, Feature detail, response scopes, and Elicits' feature
 // side. Corpus-marginal (aggregated over all models) — per-model lives in Model report.
 
 type Sort = "reward" | "generality" | "fidelity" | "name";
@@ -116,7 +117,7 @@ export default function FeaturePanel({
         <Card className="h-fit lg:sticky lg:top-4">
           <div className="grid gap-3">
             <label className="block">
-              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate-500">Search behaviors</span>
+              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate-500">Search response concepts</span>
               <span className="relative block">
                 <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-slate-500" />
                 <input value={query} onChange={(e) => setQuery(e.target.value)}
@@ -157,23 +158,27 @@ export default function FeaturePanel({
               <span><b className="font-medium text-slate-300">Verified labels only</b><br />Unverified features do not have prompt or reward relationships.</span>
             </label>
             <div className="flex items-center justify-between border-t border-edge/60 pt-2 text-[11px] text-slate-500">
-              <span>{rows.length.toLocaleString()} of {named.length.toLocaleString()} behaviors</span>
+              <span>{rows.length.toLocaleString()} of {named.length.toLocaleString()} response concepts</span>
               {(query || category || verifiedOnly !== anyVerified) && <button onClick={() => { setQuery(""); setCategory(""); setVerifiedOnly(anyVerified); }} className="text-accent hover:text-accent/80">Reset filters</button>}
             </div>
           </div>
           {selectionHidden && (
             <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2 text-[11px] leading-snug text-amber-200/80">
-              Your selected behavior is hidden by the filters; its details remain open.
+              Your selected response concept is hidden by the filters; its details remain open.
             </div>
           )}
-          <div className="mt-3 max-h-[58vh] overflow-y-auto border-t border-edge/60 pt-2 pr-1">
-            <div className="flex flex-col">
-            {rows.map((f) => {
+          <div className="mt-3 border-t border-edge/60 pt-2 pr-1">
+            <VirtualList
+              items={rows}
+              rowHeight={46}
+              height={Math.round(typeof window === "undefined" ? 520 : window.innerHeight * 0.58)}
+              emptyMessage="No feature matches."
+              renderRow={(f) => {
               const rew = f.delta_win_rate ?? f.win_assoc ?? 0;
               const rsig = f.delta_win_significant ?? f.win_significant ?? false;
               return (
-                <button key={f.feature_id} onClick={() => setSel(f.feature_id)}
-                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
+                <button onClick={() => setSel(f.feature_id)}
+                  className={`flex h-full w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
                     sel === f.feature_id ? "bg-accent/20 text-slate-100" : "text-slate-300 hover:bg-edge/40"}`}>
                   {!verifiedOnly && (
                     <span className="shrink-0 text-xs" title={f.fidelity_pass ? "verified" : "not verified"}>
@@ -201,10 +206,9 @@ export default function FeaturePanel({
                   )}
                 </button>
               );
-            })}
-            {rows.length === 0 && <p className="px-1 py-3 text-sm text-slate-500">No feature matches.</p>}
+            }}
+            />
             {hasLabels && <p className="px-2 pt-1 text-[10px] text-slate-600">* = not statistically significant</p>}
-            </div>
           </div>
         </Card>
 

@@ -668,15 +668,15 @@ export default function ReportCard({
   return (
     <div className="flex flex-col gap-4">
       <Explain>
-        A per-model <b>report card</b>: what this model <i>does a lot</i> / <i>rarely</i>
+        A per-model <b>response profile</b>: which concepts its answers express frequently or rarely
         {hasLabels ? (
-          <>{hasCorpusAssociations && <>, the dataset-favoured behaviours it <i>under-expresses</i>
+          <>{hasCorpusAssociations && <>, the dataset-favoured response concepts it <i>under-expresses</i>
           (an association, not a prescription)</>}, the prompt types it's strongest / weakest on,
           and — for this model — which prompt concepts elicit which response concepts and whether
           that <i>correlates with winning</i>.{!allowExamples && <> Raw examples are unavailable for
           this dataset overlay.</>}</>
         ) : (
-          <> — the behaviours it expresses more or less than other models on the same prompts.</>
+          <> — the response tendencies it expresses more or less than other models on the same prompts.</>
         )}
       </Explain>
 
@@ -776,7 +776,7 @@ export default function ReportCard({
               {!hasContextClassification && (
                 <p className="text-[11px] text-amber-400/80">
                   Semantic calibration and cross-context stability are unavailable. These are
-                  response features, not established general model behaviours; they remain unclassified.
+                  response concepts, not established general model tendencies; they remain unclassified.
                 </p>
               )}
               {h2hPairMissing && h2hIndex && (
@@ -818,12 +818,12 @@ export default function ReportCard({
 
           {hasLabels && (<>
           {hasCorpusAssociations && <Section
-            title="Dataset-favoured behaviours it under-expresses"
-            hint="behaviours this dataset's preferences favour (length-controlled Δwin-rate across all models) that this model expresses LESS than the pool. This is an association — favoured ≠ objectively good, and closing a gap isn't guaranteed to raise win rate (presence ≠ quality; the prompt fixes content for both sides). Read as a lead, not a prescription."
+            title="Dataset-favoured response concepts it under-expresses"
+            hint="response concepts this dataset's preferences favour (length-controlled Δwin-rate across all models) that this model expresses LESS than the pool. This is an association — favoured ≠ objectively good, and closing a gap isn't guaranteed to raise win rate (presence ≠ quality; the prompt fixes content for both sides). Read as a lead, not a prescription."
           >
             {gapBars.length === 0 ? (
               <p className="px-1 py-4 text-sm text-slate-500">
-                No dataset-favoured behaviour is under-expressed.
+                No dataset-favoured response concept is under-expressed.
               </p>
             ) : (
               <BarPanel data={gapBars} domain={[0, "dataMax"]} fmtVal={(v) => `+${v.toFixed(2)}`}

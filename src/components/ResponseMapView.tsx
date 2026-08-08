@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ResponseMapData, ResponseMapPoint } from "../types";
 import { Card, Explain } from "./ui";
+import { extent } from "./VirtualList";
 
 const PALETTE = [
   "#60a5fa", "#f87171", "#34d399", "#fbbf24", "#a78bfa", "#fb923c",
@@ -74,7 +75,8 @@ export default function ResponseMapView({ map }: { map: ResponseMapData | null }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, HEIGHT);
     const xs = map.points.map((p) => p.x), ys = map.points.map((p) => p.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const [minX, maxX] = extent(xs);
+    const [minY, maxY] = extent(ys);
     const pad = 24;
     const sx = (x: number) => pad + ((x - minX) / (maxX - minX || 1)) * (width - 2 * pad);
     const sy = (y: number) => pad + (1 - (y - minY) / (maxY - minY || 1)) * (HEIGHT - 2 * pad);

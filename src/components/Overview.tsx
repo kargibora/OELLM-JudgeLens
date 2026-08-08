@@ -29,7 +29,7 @@ export default function Overview({
   const lensKind = isDiff ? "difference" : "completion";
   const howBuilt = isDiff
     ? "we embed each response and learn a small set of interpretable “axes of difference” between the two answers (chosen − rejected) with a sparse autoencoder"
-    : "we embed each response and learn a small set of interpretable behaviour features with a sparse autoencoder, then compare the two answers by the difference of their feature codes";
+    : "we embed each response and learn a small set of interpretable response concepts with a sparse autoencoder, then compare the two answers by the difference of their feature codes";
 
   const trustworthy = bundle.features.filter((f) => f.fidelity_pass && sig(f));
   const pool = trustworthy.length ? trustworthy : bundle.features.filter(sig);
@@ -63,22 +63,22 @@ export default function Overview({
       <section className="overflow-hidden rounded-3xl border border-edge bg-hero px-5 py-6 shadow-2xl sm:px-7 sm:py-8">
         <div className="max-w-3xl">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] font-medium text-accent-soft">
-            {m.input_rep === "difference" ? "Difference-SAE analysis" : "Response behavior analysis"}
+            {m.input_rep === "difference" ? "Difference-SAE analysis" : "Response concept analysis"}
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
             Find what models do, when they do it, and how reliably we know.
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
-            Start from a user request, a response behavior, or a model. Every route leads
+            Start from a user request, a response concept, or a model. Every route leads
             back to the evidence: activation examples, verification results, support, and
             preference associations.
           </p>
         </div>
         <div className="mt-6 grid gap-3 md:grid-cols-3">
           {[
-            { view: "prompts" as const, icon: MessageSquareText, title: "Start with a prompt", body: "What behaviors do these requests elicit, and what tends to win?" },
-            { view: "behaviors" as const, icon: Activity, title: "Start with a behavior", body: "Where does it appear, which prompts trigger it, and is the label faithful?" },
-            { view: "models" as const, icon: Bot, title: "Start with a model", body: "What does it do more or less, and where is it strong or weak?" },
+            { view: "prompts" as const, icon: MessageSquareText, title: "Start with a prompt", body: "Which response concepts do these requests elicit, and what tends to win?" },
+            { view: "behaviors" as const, icon: Activity, title: "Start with a response concept", body: "Where does it appear, which prompts trigger it, and is the label faithful?" },
+            { view: "models" as const, icon: Bot, title: "Start with a model", body: "Which response tendencies distinguish it, and where is it strong or weak?" },
           ].map(({ view, icon: Icon, title, body }) => (
             <button
               key={view}
@@ -127,7 +127,7 @@ export default function Overview({
         <p className="text-sm leading-relaxed text-slate-300">
           A {lensKind} SAE over <span className="text-slate-100">{m.embed_model_id ?? "the embedding model"}</span>{" "}
           response embeddings, trained on {(m.n_battles ?? 0).toLocaleString()} arena battles. It found{" "}
-          <span className="text-slate-100">{m.n_verified ?? "—"}</span> behavior labels that passed
+          <span className="text-slate-100">{m.n_verified ?? "—"}</span> response-concept labels that passed
           an LLM verification step on held-out examples.
           {r2 != null && m.n_models != null && (
             <> A predictor built only from those features (weighted by how much humans reward each)

@@ -13,6 +13,7 @@ import {
 import type { Meta, ModelValidation } from "../types";
 import { Card, Explain, Metric } from "./ui";
 import { fmt } from "../data";
+import { extent } from "./VirtualList";
 
 export default function Validation({ validation, meta }: { validation: ModelValidation[]; meta?: Meta | null }) {
   // honest LOO story: only claim leave-one-model-out if the LOO column actually exists
@@ -43,8 +44,7 @@ export default function Validation({ validation, meta }: { validation: ModelVali
     const slope = sxy / sxx;
     const intercept = my - slope * mx;
     const xs = pts.map((p) => p.x);
-    const lo = Math.min(...xs);
-    const hi = Math.max(...xs);
+    const [lo, hi] = extent(xs);
     return {
       points: pts,
       r2: r * r,

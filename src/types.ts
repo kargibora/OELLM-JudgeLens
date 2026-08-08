@@ -370,6 +370,80 @@ export interface ModelCompare {
   concepts: MCConcept[]; n_concepts: number; verified_only: boolean; datasets: MCDataset[];
 }
 
+// --- paired, label-free response-set comparison -------------------------------
+export type ResponseScope =
+  | "general_tendency"
+  | "context_specific_tendency"
+  | "prompt_content"
+  | "unclassified";
+
+export interface PairedComparisonMeta {
+  schema_version: number;
+  analysis: "paired_response_concept_shift";
+  side_a_name: string;
+  side_b_name: string;
+  n_pairs: number;
+  n_features: number;
+  confidence?: number;
+  presence_policy: "calibrated" | "positive_nonzero" | "mixed";
+  region_kind?: "prompt_concept" | "prompt_cluster" | null;
+  preference_labels_used: false;
+}
+
+export interface PairedConceptShift {
+  feature_id: number;
+  concept?: string | null;
+  prevalence_a: number;
+  prevalence_b: number;
+  delta_b_minus_a: number;
+  ci_low?: number | null;
+  ci_high?: number | null;
+  ci_method?: "hoeffding";
+  n_pairs: number;
+  n_groups: number;
+  a_only: number;
+  b_only: number;
+  n_discordant: number;
+  p_value: number;
+  q_value: number;
+  test: "exact_mcnemar" | "cluster_sign";
+  presence_basis: "semantic_threshold" | "positive_nonzero" | "unspecified";
+  semantic_role?: string | null;
+  requested_share?: number | null;
+  n_supported_contexts?: number;
+  cross_context_consistency?: number | null;
+  response_scope: ResponseScope;
+}
+
+export interface PairedContextShift extends PairedConceptShift {
+  region_id: number;
+  region_kind?: "prompt_concept" | "prompt_cluster";
+  region_concept?: string | null;
+  region_support: number;
+  q_value_within_region: number;
+}
+
+export interface PairedComparisonExample {
+  feature_id: number;
+  concept?: string | null;
+  direction: "a_only" | "b_only";
+  item_id: string;
+  prompt: string;
+  response_a: string;
+  response_b: string;
+  activation_a: number;
+  activation_b: number;
+  side_a_name: string;
+  side_b_name: string;
+}
+
+export interface PairedComparison {
+  meta: PairedComparisonMeta;
+  concepts: PairedConceptShift[];
+  contexts: PairedContextShift[];
+  examples: PairedComparisonExample[];
+}
+
 // --- Prompt-concept co-activation (coactivation.json) — compound prompts ----
 export interface CoactPair { a: number; b: number; na: string; nb: string; lift: number; log2: number }
 export interface Coactivation { n_pairs: number; n_significant: number; pairs: CoactPair[] }
@@ -394,4 +468,50 @@ export interface Bundle {
   headToHead: HeadToHead | null;
   modelCompare: ModelCompare | null;
   coactivation: Coactivation | null;
+}
+
+/** concept_distribution.json — how often each concept fires across the corpus. */
+export interface ConceptDistributionFeature {
+  feature_id: number;
+  concept: string;
+  n_active: number;
+  fire_rate: number;
+  mean_activation: number;
+  group_fire_rate?: Record<string, number>;
+}
+
+export interface ConceptDistribution {
+  n_rows: number;
+  n_features: number;
+  rows_with_any_concept: number;
+  coverage: number;
+  concepts_per_row: {
+    mean: number;
+    quantiles: Record<string, number>;
+    histogram: number[];
+  };
+  dead_features: number[];
+  groups: string[];
+  group_column: string | null;
+  code_array: string;
+  features: ConceptDistributionFeature[];
+}
+
+/** coactivation.json — concept pairs that co-fire more than independence predicts. */
+export interface CoactivationPair {
+  a: number;
+  b: number;
+  a_concept?: string;
+  b_concept?: string;
+  count: number;
+  lift: number;
+  rows: number[];
+}
+
+export interface ConceptCoactivation {
+  n_rows: number;
+  min_pair_count: number;
+  truncated: boolean;
+  code_array: string;
+  pairs: CoactivationPair[];
 }

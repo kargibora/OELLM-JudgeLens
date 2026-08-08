@@ -9,6 +9,7 @@ import {
 import {
   Activity,
   AlertTriangle,
+  BarChart3,
   Bot,
   Braces,
   ChevronRight,
@@ -18,10 +19,13 @@ import {
   Menu,
   MessageSquareText,
   RefreshCw,
+  Share2,
   ShieldCheck,
   X,
 } from "lucide-react";
 import type {
+  ConceptDistribution as ConceptDistributionType,
+  ConceptCoactivation as ConceptCoactivationType,
   BiasRow,
   Bundle,
   Coactivation,
@@ -32,6 +36,7 @@ import type {
   HeadToHead,
   ModelCompare as ModelCompareData,
   ModelValidation,
+  PairedComparison as PairedComparisonData,
   PromptFeatures,
   ReportBattles,
 } from "./types";
@@ -45,7 +50,7 @@ import {
   type DatasetInfo,
 } from "./data";
 import Overview from "./components/Overview";
-import { Card, Segmented, Skeleton } from "./components/ui";
+import { Card, Segmented, Skeleton, SkeletonList } from "./components/ui";
 
 // Keep the analytical surfaces out of the startup chunk. A report card pulls in
 // Recharts and >1k lines of UI; users browsing the overview should not pay for it.
@@ -53,11 +58,14 @@ const FeaturePanel = lazy(() => import("./components/FeaturePanel"));
 const PromptBrowser = lazy(() => import("./components/PromptBrowser"));
 const ReportCard = lazy(() => import("./components/ReportCard"));
 const ModelCompare = lazy(() => import("./components/ModelCompare"));
+const PairedComparison = lazy(() => import("./components/PairedComparison"));
 const BiasScreen = lazy(() => import("./components/BiasScreen"));
 const Validation = lazy(() => import("./components/Validation"));
 const MapsTab = lazy(() => import("./components/MapsTab"));
+const ConceptDistributionView = lazy(() => import("./components/ConceptDistribution"));
+const CoactivationView = lazy(() => import("./components/Coactivation"));
 
-export type ViewId = "discover" | "prompts" | "behaviors" | "models" | "reliability" | "atlas";
+export type ViewId = "discover" | "distribution" | "prompts" | "behaviors" | "coactivation" | "models" | "reliability" | "atlas";
 
 export interface PrefScopeViewerProps {
   /** URL containing meta.json, features.json, and bundle_manifest.json. */
@@ -75,13 +83,17 @@ const VIEWS: {
   description: string;
   icon: typeof Compass;
   group?: string;
+  /** Bundle artifact this view needs; the tab is hidden when the bundle lacks it. */
+  requires?: string;
 }[] = [
   { id: "discover", label: "Discover", description: "What the lens found", icon: Compass },
-  { id: "prompts", label: "Prompt behavior", description: "When users ask X", icon: MessageSquareText, group: "Explore" },
-  { id: "behaviors", label: "Behaviors", description: "Inspect response features", icon: Activity },
-  { id: "models", label: "Models", description: "How each model responds", icon: Bot },
+  { id: "distribution", label: "Concept distribution", description: "What this dataset contains", icon: BarChart3, requires: "concept_distribution.json" },
+  { id: "prompts", label: "Prompt context", description: "When users ask X", icon: MessageSquareText, group: "Explore" },
+  { id: "behaviors", label: "Response concepts", description: "Inspect what responses express", icon: Activity },
+  { id: "coactivation", label: "Co-activation", description: "Concepts that fire together", icon: Share2, requires: "coactivation.json" },
+  { id: "models", label: "Models", description: "How each model responds", icon: Bot, requires: "diagnosis.json" },
   { id: "reliability", label: "Reliability", description: "Fidelity, bias, validation", icon: ShieldCheck, group: "Audit" },
-  { id: "atlas", label: "Embedding atlas", description: "Explore the geometry", icon: Map },
+  { id: "atlas", label: "Embedding atlas", description: "Explore the geometry", icon: Map, requires: "map.json|response_map.json|prompt_map.json" },
 ];
 
 const isView = (x: string): x is ViewId => VIEWS.some((v) => v.id === x);
@@ -199,19 +211,27 @@ function ModelRoute({
   // lens metadata, while reward, prevalence and support fields belong to the root corpus.
   const headToHead = useDataArtifact<HeadToHead>(overlay ? null : "head_to_head.json");
   const modelCompare = useDataArtifact<ModelCompareData>(overlay ? null : "model_compare.json");
-  const [mode, setMode] = useState<"report" | "compare">("report");
+  const pairedComparison = useDataArtifact<PairedComparisonData>(overlay ? null : "paired_comparison.json");
+  const [mode, setMode] = useState<"report" | "compare" | "shift">("report");
   const [wantBattles, setWantBattles] = useState(false);
   const reportBattles = useDataArtifact<ReportBattles>(wantBattles ? "report_battles.json" : null);
   const battlesAvailable = !overlay && client.hasArtifact("report_battles.json");
 
-  if (diagnosis === undefined || (!overlay && (headToHead === undefined || modelCompare === undefined)))
+  if (diagnosis === undefined || (!overlay && (headToHead === undefined || modelCompare === undefined || pairedComparison === undefined)))
     return <RouteFallback />;
 
   const reportAvailable = diagnosis != null && diagnosis.error !== "no_bank";
   const compareAvailable = !overlay && modelCompare != null;
-  const effectiveMode = mode === "report" && !reportAvailable && compareAvailable ? "compare" : mode;
+  const shiftAvailable = !overlay && pairedComparison != null;
+  const effectiveMode = mode === "report" && !reportAvailable
+    ? shiftAvailable ? "shift" : compareAvailable ? "compare" : "report"
+    : mode === "compare" && !compareAvailable
+      ? shiftAvailable ? "shift" : "report"
+      : mode === "shift" && !shiftAvailable
+        ? reportAvailable ? "report" : "compare"
+        : mode;
 
-  if (!reportAvailable && !compareAvailable)
+  if (!reportAvailable && !compareAvailable && !shiftAvailable)
     return (
       <ArtifactNotice>
         No per-model diagnosis is present. Export a bank-backed diagnosis for full model
@@ -222,17 +242,20 @@ function ModelRoute({
 
   return (
     <div className="space-y-4">
-      {reportAvailable && compareAvailable && (
+      {[reportAvailable, compareAvailable, shiftAvailable].filter(Boolean).length > 1 && (
         <Segmented
           value={effectiveMode}
           onChange={setMode}
           options={[
-            { value: "report", label: "Model report", title: "Corpus-wide profile and prompt-conditioned outcomes" },
-            { value: "compare", label: "Pair comparison", title: "Direct comparison for bring-your-own evaluations" },
+            ...(reportAvailable ? [{ value: "report" as const, label: "Model report", title: "Corpus-wide profile and prompt-conditioned outcomes" }] : []),
+            ...(shiftAvailable ? [{ value: "shift" as const, label: "Response-set shifts", title: "Prompt-matched, label-free A/B concept shifts" }] : []),
+            ...(compareAvailable ? [{ value: "compare" as const, label: "Arena pair comparison", title: "Marginal comparison for bring-your-own evaluations" }] : []),
           ]}
         />
       )}
-      {effectiveMode === "compare" ? (
+      {effectiveMode === "shift" ? (
+        <PairedComparison data={pairedComparison ?? null} />
+      ) : effectiveMode === "compare" ? (
         <ModelCompare data={modelCompare ?? null} />
       ) : (
         <ReportCard
@@ -491,7 +514,7 @@ export default function App({
       <div className={`mx-auto grid max-w-[1680px] lg:grid-cols-[248px_minmax(0,1fr)] ${layout === "standalone" ? "min-h-screen" : "min-h-[640px]"}`}>
         <aside className={`hidden border-r border-edge/70 bg-ink/70 px-4 py-6 lg:sticky lg:top-0 lg:block ${layout === "standalone" ? "lg:h-screen" : "lg:h-full"}`}>
           <Brand />
-          <Navigation view={view} onNavigate={navigate} />
+          <Navigation view={view} onNavigate={navigate} client={client} />
           <BundleStatus bundle={bundle} />
         </aside>
 
@@ -504,7 +527,7 @@ export default function App({
                 <Brand />
                 <button ref={closeNavRef} className="icon-button grid" aria-label="Close navigation" onClick={() => setMobileNav(false)}><X size={18} /></button>
               </div>
-              <Navigation view={view} onNavigate={navigate} />
+              <Navigation view={view} onNavigate={navigate} client={client} />
             </aside>
           </div>
         )}
@@ -579,6 +602,14 @@ export default function App({
                 overlay ? <OverlayBlocked onModels={() => navigate("models")} />
                   : <BehaviorRoute bundle={bundle} focus={featureFocus} onJumpPrompt={jumpPrompt} />
               )}
+              {view === "distribution" && (
+                overlay ? <OverlayBlocked onModels={() => navigate("models")} />
+                  : <DistributionRoute onJumpFeature={jumpFeature} />
+              )}
+              {view === "coactivation" && (
+                overlay ? <OverlayBlocked onModels={() => navigate("models")} />
+                  : <CoactivationRoute focus={featureFocus?.cf ?? null} onJumpFeature={jumpFeature} />
+              )}
               {view === "models" && (
                 <ModelRoute bundle={bundle} overlay={overlay} onJumpFeature={jumpFeature} />
               )}
@@ -611,17 +642,37 @@ function Brand() {
       </div>
       <div>
         <div className="text-base font-semibold tracking-tight text-slate-50">PrefScope</div>
-        <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">Behavior explorer</div>
+        <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">Response concept explorer</div>
       </div>
     </div>
   );
 }
 
-function Navigation({ view, onNavigate }: { view: ViewId; onNavigate: (view: ViewId) => void }) {
+function DistributionRoute({ onJumpFeature }: { onJumpFeature: (fid: number) => void }) {
+  const dist = useDataArtifact<ConceptDistributionType>("concept_distribution.json");
+  if (dist === undefined) return <SkeletonList n={2} itemClass="h-48" />;
+  if (!dist) return <ArtifactNotice>This bundle has no <code>concept_distribution.json</code>. Re-run <code>prefscope-viewer</code> to add it.</ArtifactNotice>;
+  return <ConceptDistributionView dist={dist} onSelectConcept={onJumpFeature} />;
+}
+
+function CoactivationRoute({ focus, onJumpFeature }: { focus: number | null; onJumpFeature: (fid: number) => void }) {
+  const coact = useDataArtifact<ConceptCoactivationType>("coactivation.json");
+  if (coact === undefined) return <SkeletonList n={2} itemClass="h-48" />;
+  if (!coact) return <ArtifactNotice>This bundle has no <code>coactivation.json</code>. Re-run <code>prefscope-viewer</code> to add it.</ArtifactNotice>;
+  return <CoactivationView coact={coact} selected={focus} onSelectConcept={onJumpFeature} />;
+}
+
+function Navigation({ view, onNavigate, client }: { view: ViewId; onNavigate: (view: ViewId) => void; client?: PrefScopeDataClient }) {
   let lastGroup: string | undefined;
+  // A view whose artifact the bundle does not carry is hidden rather than shown as a
+  // dead tab: absence is a property of the dataset, not an error to report per click.
+  const available = VIEWS.filter((item) => {
+    if (!item.requires || !client) return true;
+    return item.requires.split("|").some((name) => client.hasArtifact(name));
+  });
   return (
     <nav className="mt-8 space-y-1" aria-label="Analysis views">
-      {VIEWS.map((item) => {
+      {available.map((item) => {
         const Icon = item.icon;
         const group = item.group && item.group !== lastGroup ? item.group : null;
         if (item.group) lastGroup = item.group;
