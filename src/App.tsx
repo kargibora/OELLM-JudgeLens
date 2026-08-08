@@ -333,6 +333,7 @@ function OverlayBlocked({ onModels }: { onModels: () => void }) {
 }
 
 function ReliabilityRoute({ bundle }: { bundle: Bundle }) {
+  const client = useDataClient();
   const [mode, setMode] = useState<"fidelity" | "bias" | "validation">("fidelity");
   const bias = useDataArtifact<BiasRow[]>(mode === "bias" ? "bias_screen.json" : null);
   const validation = useDataArtifact<ModelValidation[]>(mode === "validation" ? "validation.json" : null);
@@ -353,9 +354,12 @@ function ReliabilityRoute({ bundle }: { bundle: Bundle }) {
           value={mode}
           onChange={setMode}
           options={[
-            { value: "fidelity", label: "Feature fidelity" },
-            { value: "bias", label: "Length confounds" },
-            { value: "validation", label: "Model validation" },
+            { value: "fidelity" as const, label: "Feature fidelity" },
+            // Both need preference labels; offering them on unlabelled data is a dead click.
+            ...(client.hasArtifact("bias_screen.json")
+              ? [{ value: "bias" as const, label: "Length confounds" }] : []),
+            ...(client.hasArtifact("validation.json")
+              ? [{ value: "validation" as const, label: "Model validation" }] : []),
           ]}
         />
       </div>

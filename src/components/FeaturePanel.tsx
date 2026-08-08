@@ -430,25 +430,36 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
   concept: string;
   contrastOnly?: boolean;
 }) {
+  // Single-response data has no second answer, so there is no side to choose and no
+  // contrast to report: the activation is simply the concept's strength on that response.
+  const paired = useMemo(
+    () => (raw ?? []).some((e) => Boolean(e.completion_b)),
+    [raw],
+  );
   const items = useMemo(() => {
     return (raw ?? []).map((e) => {
       const aSide = e.z >= 0; // A exhibits the feature more when z_diff > 0
-      return { z: e.z, prompt: e.prompt, model: aSide ? e.model_a : e.model_b, completion: aSide ? e.completion_a : e.completion_b };
+      return {
+        z: e.z,
+        prompt: e.prompt,
+        model: paired ? (aSide ? e.model_a : e.model_b) : "",
+        completion: paired ? (aSide ? e.completion_a : e.completion_b) : e.completion_a,
+      };
     }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 12);
-  }, [raw]);
+  }, [raw, paired]);
   const clipC = (s: string, n = 1400) => (s.length > n ? s.slice(0, n) + " …[truncated]" : s);
   const loading = raw === undefined;
   if (loading)
     return (
       <Card>
-        <h4 className="mb-2 text-sm font-semibold text-slate-200">Examples with strongest contrast on “{concept}”</h4>
+        <h4 className="mb-2 text-sm font-semibold text-slate-200">Strongest examples of “{concept}”</h4>
         <SkeletonList n={3} itemClass="h-24" />
       </Card>
     );
   return (
     <Card>
-      <h4 className="text-sm font-semibold text-slate-200">Examples with strongest contrast on “{concept}”</h4>
-      {contrastOnly && (
+      <h4 className="text-sm font-semibold text-slate-200">{paired ? `Examples with strongest contrast on “${concept}”` : `Strongest examples of “${concept}”`}</h4>
+      {contrastOnly && paired && (
         <p className="mt-1 text-[11px] leading-relaxed text-amber-300/80">
           Selected by relative axis contrast: this side scores above the paired answer. That
           alone does not prove positive-pole concept presence.
@@ -459,9 +470,14 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
           {items.map((it, i) => (
             <div key={i} className="rounded-lg border border-edge bg-ink/40 p-2 text-xs">
               <div className="mb-1 flex flex-wrap items-center gap-2">
-                <span className="rounded bg-slate-600/25 px-1.5 py-0.5 font-medium text-slate-400">{it.model}</span>
-                <span className="font-mono text-slate-500" title="signed A-minus-B feature-axis contrast">
-                  pairwise contrast {it.z >= 0 ? "+" : ""}{it.z.toFixed(2)}
+                {it.model && (
+                  <span className="rounded bg-slate-600/25 px-1.5 py-0.5 font-medium text-slate-400">{it.model}</span>
+                )}
+                <span className="font-mono text-slate-500"
+                  title={paired ? "signed A-minus-B feature-axis contrast" : "activation on this response"}>
+                  {paired
+                    ? `pairwise contrast ${it.z >= 0 ? "+" : ""}${it.z.toFixed(2)}`
+                    : `activation ${it.z.toFixed(2)}`}
                 </span>
               </div>
               <div className="mb-1 text-slate-400"><span className="font-semibold text-slate-300">prompt:</span> {clip(it.prompt, 260)}</div>
