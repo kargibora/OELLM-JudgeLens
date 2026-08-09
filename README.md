@@ -49,7 +49,7 @@ The default application reads an exported bundle from `public/data/`. Generate o
 the PrefScope repository:
 
 ```bash
-prefscope-viewer \
+prefscope-export-viewer \
   --lens-dir /path/to/completion-lens \
   --analysis-dir /path/to/completion-results \
   --corpus /path/to/corpus.parquet \
