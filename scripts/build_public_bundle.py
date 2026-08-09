@@ -46,7 +46,7 @@ REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b"), "[REDACTED EMAIL]"),
     (
         re.compile(
-            r"/(?:Users|home)/(?:kargibora|borargi)(?:/[^\s\"']*)?"
+            r"/(?:Users|home)/[^/\s\"']+(?:/[^\s\"']*)?"
             r"|/(?:scratch|projappl|flash)/project_465002530(?:/[^\s\"']*)?"
         ),
         "[REDACTED LOCAL PATH]",

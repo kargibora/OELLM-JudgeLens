@@ -268,6 +268,27 @@ export interface ResponseMapData {
   behaviors?: Record<string, string>;
 }
 
+// --- SAE feature atlas (one point per decoder direction; never sampled) ---
+export interface FeatureMapPoint {
+  feature_id: number;
+  x: number;
+  y: number;
+  decoder_norm: number;
+  zero_decoder: boolean;
+}
+
+export interface FeatureMapData {
+  n_total: number;
+  n_named: number;
+  n_verified: number;
+  n_zero_decoder: number;
+  projection: "umap" | "svd" | string;
+  basis: "sae_decoder_direction" | string;
+  metric: "cosine" | string;
+  seed: number;
+  points: FeatureMapPoint[];
+}
+
 // --- confound screen ---
 export interface BiasRow {
   feature_id: number;

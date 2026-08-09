@@ -5,6 +5,7 @@ import type {
   ConditionalBundle,
   ConditionalData,
   Example,
+  FeatureMapData,
   MapData,
   PromptMapData,
   ResponseMapData,
@@ -242,7 +243,7 @@ export function useFeatureExamples(fid: number | null | undefined): Example[] | 
   return shard === null ? legacy : shard;
 }
 
-export function useMap<T = MapData | PromptMapData | ResponseMapData>(name: string): T | null | undefined {
+export function useMap<T = FeatureMapData | MapData | PromptMapData | ResponseMapData>(name: string): T | null | undefined {
   return useDataArtifact<T>(name);
 }
 

@@ -132,7 +132,7 @@ export default function ResponseMapView({ map }: { map: ResponseMapData | null }
       </Explain>
       <Card>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold">Feature map (responses)</h2>
+          <h2 className="text-lg font-semibold">Response scatter</h2>
           <span className="text-xs text-slate-500">
             {map.n_sampled.toLocaleString()} of {map.n_total.toLocaleString()} responses
             {" · "}<span className="text-slate-400">click a point to inspect one response</span>

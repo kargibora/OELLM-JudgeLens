@@ -24,8 +24,9 @@ The repository works both as a standalone Vite application and as the
   prompt-type performance, and evidence drill-downs.
 - **Reliability** — interpretation fidelity, length-confound screening, and honest
   in-sample versus leave-one-model-out validation.
-- **Embedding atlas** — lazily loaded exploratory maps. These are diagnostics, not causal
-  evidence.
+- **Feature atlas** — every SAE decoder axis in one searchable UMAP, with fidelity and
+  role filters, corpus examples, and dataset co-activation links. Separate sampled
+  response, battle, and prompt scatters remain available when exported.
 
 Heavy artifacts are loaded by route and transcripts are requested explicitly. A complete
 bundle no longer blocks the first render.
@@ -55,6 +56,7 @@ prefscope-viewer \
   --prompt-interpret-dir /path/to/prompt-results \
   --prompt-lens /path/to/prompt-lens \
   --joint-examples \
+  --feature-map \
   --bias-screen /path/to/bias_screen.csv \
   --out public/data
 ```
