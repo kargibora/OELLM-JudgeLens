@@ -84,6 +84,32 @@ def _copy_json(source: Path, output: Path, counts: dict[str, int]) -> None:
     _write(output, _sanitize(_read(source), counts))
 
 
+def _copy_coactivation(
+    source: Path,
+    output: Path,
+    counts: dict[str, int],
+    examples_per_pair: int,
+) -> dict[str, int]:
+    """Keep only the ranked evidence rows the public pair list can display."""
+    data = _read(source)
+    examples = data.get("examples", {})
+    kept_rows: set[str] = set()
+    for pair in data.get("pairs", []):
+        rows = [int(row) for row in pair.get("rows", [])[:examples_per_pair]]
+        pair["rows"] = rows
+        kept_rows.update(str(row) for row in rows)
+    data["examples"] = {
+        row: examples[row]
+        for row in sorted(kept_rows, key=int)
+        if row in examples
+    }
+    _write(output, _sanitize(data, counts))
+    return {
+        "pairs": len(data.get("pairs", [])),
+        "examples": len(data["examples"]),
+    }
+
+
 def _joint_pairs(source: Path) -> set[tuple[int, int]]:
     """Return raw prompt/response pairs that the public UI can display."""
     pairs: set[tuple[int, int]] = set()
@@ -104,7 +130,13 @@ def _joint_pairs(source: Path) -> set[tuple[int, int]]:
     return pairs
 
 
-def build(source: Path, output: Path, feature_examples: int, joint_examples: int) -> dict[str, Any]:
+def build(
+    source: Path,
+    output: Path,
+    feature_examples: int,
+    joint_examples: int,
+    coactivation_examples: int,
+) -> dict[str, Any]:
     manifest = _read(source / "bundle_manifest.json")
     if output.exists():
         shutil.rmtree(output)
@@ -112,6 +144,7 @@ def build(source: Path, output: Path, feature_examples: int, joint_examples: int
     redactions: dict[str, int] = {}
 
     files: list[str] = []
+    coactivation_stats = {"pairs": 0, "examples": 0}
     for name in manifest.get("files", []):
         if name in OMIT or name.endswith("/"):
             continue
@@ -119,7 +152,12 @@ def build(source: Path, output: Path, feature_examples: int, joint_examples: int
         if src.is_file():
             dst = output / name
             dst.parent.mkdir(parents=True, exist_ok=True)
-            _copy_json(src, dst, redactions)
+            if name == "coactivation.json":
+                coactivation_stats = _copy_coactivation(
+                    src, dst, redactions, coactivation_examples
+                )
+            else:
+                _copy_json(src, dst, redactions)
             files.append(name)
 
     datasets = source / "datasets"
@@ -174,6 +212,8 @@ def build(source: Path, output: Path, feature_examples: int, joint_examples: int
             "joint_examples_per_pair": joint_examples,
             "joint_pairs": joint_pairs_written,
             "joint_examples": joint_examples_written,
+            "coactivation_examples_per_pair": coactivation_examples,
+            "coactivation_examples": coactivation_stats["examples"],
             "omitted": ["examples_by_model.json", "examples.json"],
             "redactions": redactions,
         },
@@ -187,6 +227,7 @@ def build(source: Path, output: Path, feature_examples: int, joint_examples: int
         "feature_examples": examples_written,
         "joint_pairs": joint_pairs_written,
         "joint_examples": joint_examples_written,
+        "coactivation_examples": coactivation_stats["examples"],
         "redactions": redactions,
     }
 
@@ -197,14 +238,16 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--feature-examples", type=int, default=3)
     parser.add_argument("--joint-examples", type=int, default=1)
+    parser.add_argument("--coactivation-examples", type=int, default=1)
     args = parser.parse_args()
-    if args.feature_examples < 1 or args.joint_examples < 1:
+    if min(args.feature_examples, args.joint_examples, args.coactivation_examples) < 1:
         parser.error("example limits must be positive")
     summary = build(
         args.source.resolve(),
         args.output.resolve(),
         args.feature_examples,
         args.joint_examples,
+        args.coactivation_examples,
     )
     print(json.dumps(summary, indent=2))
 

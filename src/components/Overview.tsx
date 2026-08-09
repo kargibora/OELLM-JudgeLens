@@ -20,6 +20,13 @@ export default function Overview({
 }) {
   const m = bundle.meta;
   const hasLabels = m.has_preference ?? true;
+  const single = m.dataset_mode === "single";
+  const files = new Set(bundle.manifest?.files ?? []);
+  const legacy = bundle.manifest == null;
+  const hasPromptView = legacy || ["prompt_features.json", "elicitation.json", "prompt_map.json"]
+    .some((name) => files.has(name));
+  const hasModelView = legacy || ["diagnosis.json", "model_compare.json", "head_to_head.json"]
+    .some((name) => files.has(name));
   // honest fit reporting: r2/is_loo are authoritative; loo_r2 alone (older bundles)
   // implies LOO. NEVER label an in-sample fit "held-out".
   const r2 = m.r2 ?? m.loo_r2;
@@ -29,7 +36,9 @@ export default function Overview({
   const lensKind = isDiff ? "difference" : "completion";
   const howBuilt = isDiff
     ? "we embed each response and learn a small set of interpretable “axes of difference” between the two answers (chosen − rejected) with a sparse autoencoder"
-    : "we embed each response and learn a small set of interpretable response concepts with a sparse autoencoder, then compare the two answers by the difference of their feature codes";
+    : single
+      ? "we embed each response and learn a sparse set of candidate response concepts with a sparse autoencoder"
+      : "we embed each response and learn a sparse set of candidate response concepts, then compare prompt-matched answers through their feature codes";
 
   const trustworthy = bundle.features.filter((f) => f.fidelity_pass && sig(f));
   const pool = trustworthy.length ? trustworthy : bundle.features.filter(sig);
@@ -37,6 +46,28 @@ export default function Overview({
   const rewarded = [...pool].filter((f) => eff(f) > 0).sort((a, b) => eff(b) - eff(a)).slice(0, 3);
   const penalized = [...pool].filter((f) => eff(f) < 0).sort((a, b) => eff(a) - eff(b)).slice(0, 3);
   const namedDenom = m.n_named ?? bundle.features.length;
+  const startCards = [
+    ...(hasPromptView ? [{
+      view: "prompts" as const,
+      icon: MessageSquareText,
+      title: "Start with a prompt",
+      body: hasLabels
+        ? "Which response concepts do these requests elicit, and what tends to win?"
+        : "Which response concepts tend to appear for these requests?",
+    }] : []),
+    {
+      view: "behaviors" as const,
+      icon: Activity,
+      title: "Start with a response concept",
+      body: "Where does it appear, which prompts elicit it, and how faithful is its label?",
+    },
+    ...(hasModelView ? [{
+      view: "models" as const,
+      icon: Bot,
+      title: "Start with a model",
+      body: "Which response tendencies distinguish it, and where is it strong or weak?",
+    }] : []),
+  ];
 
   // each driver row jumps to its feature in the Feature panel — the best entry point
   // into the app shouldn't be a dead display.
@@ -66,20 +97,18 @@ export default function Overview({
             {m.input_rep === "difference" ? "Difference-SAE analysis" : "Response concept analysis"}
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
-            Find what models do, when they do it, and how reliably we know.
+            {single
+              ? "See what this response dataset contains—and the evidence behind each concept."
+              : "Find what models do, when they do it, and how reliably we know."}
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
-            Start from a user request, a response concept, or a model. Every route leads
-            back to the evidence: activation examples, verification results, support, and
-            preference associations.
+            {single
+              ? "Explore response concepts, their prevalence and co-activation, prompt context, held-out verification, and concrete activation examples."
+              : "Start from a user request, response concept, or model. Every route leads back to activation examples, verification, support, and preference associations."}
           </p>
         </div>
-        <div className="mt-6 grid gap-3 md:grid-cols-3">
-          {[
-            { view: "prompts" as const, icon: MessageSquareText, title: "Start with a prompt", body: "Which response concepts do these requests elicit, and what tends to win?" },
-            { view: "behaviors" as const, icon: Activity, title: "Start with a response concept", body: "Where does it appear, which prompts trigger it, and is the label faithful?" },
-            { view: "models" as const, icon: Bot, title: "Start with a model", body: "Which response tendencies distinguish it, and where is it strong or weak?" },
-          ].map(({ view, icon: Icon, title, body }) => (
+        <div className={`mt-6 grid gap-3 ${startCards.length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          {startCards.map(({ view, icon: Icon, title, body }) => (
             <button
               key={view}
               onClick={() => onNavigate?.(view)}
@@ -107,7 +136,7 @@ export default function Overview({
             <Metric label="Models" value={m.n_models ?? "—"} sub="in validation" />
           </>
         )}
-        <Metric label="Battles" value={(m.n_battles ?? 0).toLocaleString()} />
+        <Metric label={single ? "Examples" : "Battles"} value={(m.n_battles ?? 0).toLocaleString()} />
         <Metric label="M / K" value={`${m.m_total} / ${m.k}`} sub={`dim ${m.input_dim}`} />
       </div>
 
@@ -126,7 +155,7 @@ export default function Overview({
         <h2 className="mb-2 text-lg font-semibold">What this lens found</h2>
         <p className="text-sm leading-relaxed text-slate-300">
           A {lensKind} SAE over <span className="text-slate-100">{m.embed_model_id ?? "the embedding model"}</span>{" "}
-          response embeddings, trained on {(m.n_battles ?? 0).toLocaleString()} arena battles. It found{" "}
+          response embeddings, trained on {(m.n_battles ?? 0).toLocaleString()} {single ? "instruction–response examples" : "paired response comparisons"}. It found{" "}
           <span className="text-slate-100">{m.n_verified ?? "—"}</span> response-concept labels that passed
           an LLM verification step on held-out examples.
           {r2 != null && m.n_models != null && (
@@ -163,7 +192,7 @@ export default function Overview({
             relate).{" "}</>
           )}
           Concepts are <b>LLM-assigned labels</b>; ✓ marks ones an LLM verifier reproduced on
-          held-out pairs. {hasLabels && (verifiedBasis
+          held-out {single ? "examples" : "pairs"}. {hasLabels && (verifiedBasis
             ? "Showing verified, significant axes only. "
             : "No verified axes yet — showing significant-but-unverified axes; treat the labels as provisional. ")}
           Association, not causation.

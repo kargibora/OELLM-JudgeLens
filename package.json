@@ -2,7 +2,7 @@
   "name": "@prefscope/viewer",
   "version": "0.1.0",
   "type": "module",
-  "description": "Interactive behavior explorer for PrefScope post-training and SAE analysis bundles.",
+  "description": "Interactive response-concept explorer for PrefScope post-training and SAE analysis bundles.",
   "license": "MIT",
   "main": "./lib/index.js",
   "module": "./lib/index.js",

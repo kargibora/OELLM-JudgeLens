@@ -121,7 +121,7 @@ export function ConceptLabel({
 }
 
 // ✓ verified / unverified pill — drives the "is this label trustworthy?" signal.
-// `n` (held-out pairs) shown when present so n=14 doesn't masquerade as n=200.
+// `n` (held-out examples) shown when present so n=14 doesn't masquerade as n=200.
 // Three states, not two: a label that FAILED its held-out check is materially worse
 // than one that was never tested — don't let both read "unverified".
 export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number | null }) {
@@ -137,7 +137,7 @@ export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number |
       className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
         pass ? "bg-good/15 text-good" : "bg-amber-500/15 text-amber-400"
       }`}
-      title={pass ? "an LLM verifier reproduced this label on held-out pairs" : "an LLM verifier could not reproduce this label under the configured held-out checks"}
+      title={pass ? "an LLM verifier reproduced this label on held-out examples" : "an LLM verifier could not reproduce this label under the configured held-out checks"}
     >
       {pass ? "✓ verified" : "✗ failed check"}
       {n != null ? ` · n=${n}` : ""}

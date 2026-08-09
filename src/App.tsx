@@ -88,7 +88,7 @@ const VIEWS: {
 }[] = [
   { id: "discover", label: "Discover", description: "What the lens found", icon: Compass },
   { id: "distribution", label: "Concept distribution", description: "What this dataset contains", icon: BarChart3, requires: "concept_distribution.json" },
-  { id: "prompts", label: "Prompt context", description: "When users ask X", icon: MessageSquareText, group: "Explore" },
+  { id: "prompts", label: "Prompt context", description: "When users ask X", icon: MessageSquareText, group: "Explore", requires: "prompt_features.json|elicitation.json|prompt_map.json" },
   { id: "behaviors", label: "Response concepts", description: "Inspect what responses express", icon: Activity },
   { id: "coactivation", label: "Co-activation", description: "Concepts that fire together", icon: Share2, requires: "coactivation.json" },
   { id: "models", label: "Models", description: "How each model responds", icon: Bot, requires: "diagnosis.json" },

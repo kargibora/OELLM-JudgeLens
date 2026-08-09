@@ -52,7 +52,9 @@ export default function Coactivation({
         Concepts that fire together on the same response more often than independence
         predicts. Lift is P(both) ÷ P(a)·P(b) — above 1 means they co-occur, and a pair
         near 1 is just two common concepts meeting by chance. Ranked per concept, so a
-        few dense concepts cannot crowd out the rest.
+        few dense concepts cannot crowd out the rest. The examples have high joint sparse
+        activation; inspect their text because nonzero activation is not a calibrated claim
+        that both labels are semantically present.
       </Explain>
 
       <Card>
@@ -144,32 +146,36 @@ export default function Coactivation({
 
         <VirtualList
           items={pairs}
-          rowHeight={52}
+          rowHeight={64}
           height={520}
           emptyMessage="No co-activating pair matches that filter."
           renderRow={(p) => {
             const key = `${p.a}-${p.b}`;
             const isOpen = openPair === key;
             return (
-              <div className="h-full flex items-center gap-3 px-2 hover:bg-edge/40 rounded">
-                <div className="flex-1 min-w-0 flex items-center gap-2 text-sm">
+              <div className="h-full flex min-w-0 items-center gap-2 px-2 hover:bg-edge/40 rounded sm:gap-3">
+                <div className="flex flex-1 min-w-0 flex-col justify-center gap-0.5 text-sm sm:flex-row sm:items-center sm:gap-2">
                   <button
                     type="button"
-                    className="truncate max-w-[40%] text-left hover:underline"
+                    className="min-w-0 truncate text-left hover:underline sm:max-w-[45%]"
                     onClick={() => onSelectConcept?.(p.a)}
+                    title={nameOf(p, "a")}
                   >
                     <ConceptLabel id={p.a} name={p.a_concept ?? null} />
                   </button>
-                  <span className="text-slate-400 shrink-0">+</span>
-                  <button
-                    type="button"
-                    className="truncate max-w-[40%] text-left hover:underline"
-                    onClick={() => onSelectConcept?.(p.b)}
-                  >
-                    <ConceptLabel id={p.b} name={p.b_concept ?? null} />
-                  </button>
+                  <div className="flex min-w-0 items-center gap-2 sm:contents">
+                    <span className="shrink-0 text-slate-400">+</span>
+                    <button
+                      type="button"
+                      className="min-w-0 truncate text-left hover:underline sm:max-w-[45%]"
+                      onClick={() => onSelectConcept?.(p.b)}
+                      title={nameOf(p, "b")}
+                    >
+                      <ConceptLabel id={p.b} name={p.b_concept ?? null} />
+                    </button>
+                  </div>
                 </div>
-                <div className="w-28 shrink-0 h-2 bg-edge/40 rounded overflow-hidden">
+                <div className="hidden w-28 shrink-0 h-2 bg-edge/40 rounded overflow-hidden lg:block">
                   <div
                     className="h-full bg-good/80"
                     style={{ width: `${Math.max(2, (p.lift / maxLift) * 100)}%` }}
@@ -178,17 +184,18 @@ export default function Coactivation({
                 <div className="w-16 shrink-0 text-right text-sm tabular-nums" title="lift">
                   {p.lift.toFixed(1)}×
                 </div>
-                <div className="w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums">
+                <div className="hidden w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums md:block">
                   {p.count.toLocaleString()}
                 </div>
                 {p.rows.length > 0 && coact.examples && (
                   <button
                     type="button"
-                    className="shrink-0 text-xs px-2 py-1 rounded border border-edge/70 hover:bg-edge/40 text-slate-300"
+                    className="w-8 shrink-0 overflow-hidden whitespace-nowrap rounded border border-edge/70 px-1.5 py-1 text-xs text-slate-300 hover:bg-edge/40 sm:w-auto sm:px-2"
                     onClick={() => setOpenPair(isOpen ? null : key)}
                     aria-expanded={isOpen}
+                    aria-label={isOpen ? "Hide examples" : `Show ${p.rows.length} examples`}
                   >
-                    {isOpen ? "Hide" : `${p.rows.length} examples`}
+                    <span aria-hidden>{isOpen ? "−" : "+"}</span><span className="hidden sm:inline"> {isOpen ? "Hide" : `${p.rows.length} examples`}</span>
                   </button>
                 )}
               </div>

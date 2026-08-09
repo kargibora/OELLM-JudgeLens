@@ -1,9 +1,9 @@
 # PrefScope Viewer
 
-PrefScope Viewer is an interactive behavior explorer for PrefScope analysis bundles. It
+PrefScope Viewer is an interactive response-concept explorer for PrefScope analysis bundles. It
 connects four questions that are otherwise easy to inspect in isolation:
 
-- What behavior does a model exhibit?
+- What response concepts does a corpus contain?
 - Which prompt types elicit it?
 - How does that differ across models or correlate with preferences?
 - What examples, support, verification, and confound checks justify the claim?
@@ -48,15 +48,15 @@ The default application reads an exported bundle from `public/data/`. Generate o
 the PrefScope repository:
 
 ```bash
-python scripts/export_viewer_data.py \
+prefscope-viewer \
   --lens-dir /path/to/completion-lens \
+  --analysis-dir /path/to/completion-results \
   --corpus /path/to/corpus.parquet \
   --prompt-interpret-dir /path/to/prompt-results \
   --prompt-lens /path/to/prompt-lens \
-  --completion-lens /path/to/completion-lens \
   --joint-examples \
   --bias-screen /path/to/bias_screen.csv \
-  --out viewer-web/public/data
+  --out public/data
 ```
 
 `bundle_manifest.json` is authoritative. Optional files that are present on disk but not
@@ -143,9 +143,10 @@ tar -czf /tmp/completion_m2048-public.tar.gz \
 ```
 
 The public profile retains aggregate results, caps activation evidence at three examples
-per feature and one transcript per displayed prompt–response relationship, redacts common
-credential and personal-data patterns, and omits the monolithic per-model transcript
-artifact. The Pages workflow downloads this versioned release asset before building.
+per feature and one transcript per displayed prompt–response or co-activation relationship,
+redacts common credential and personal-data patterns, and omits the monolithic per-model
+transcript artifact. The Pages workflow downloads this versioned release asset before
+building.
 
 ## Package status
 

@@ -150,13 +150,13 @@ export default function ConceptDistribution({
             <button
               type="button"
               onClick={() => onSelectConcept?.(f.feature_id)}
-              className="w-full h-full flex items-center gap-3 px-2 text-left hover:bg-edge/40 rounded"
+              className="w-full h-full flex min-w-0 items-center gap-3 px-2 text-left hover:bg-edge/40 rounded"
               title={conceptLabel(f.feature_id, f.concept)}
             >
-              <div className="w-64 shrink-0 truncate text-sm">
+              <div className="min-w-0 flex-1 truncate text-sm sm:w-64 sm:flex-none">
                 <ConceptLabel id={f.feature_id} name={f.concept} />
               </div>
-              <div className="flex-1 h-2 bg-edge/40 rounded overflow-hidden">
+              <div className="hidden min-w-12 flex-1 h-2 bg-edge/40 rounded overflow-hidden sm:block">
                 <div
                   className="h-full bg-accent/80"
                   style={{ width: `${Math.max(1, (f.fire_rate / maxRate) * 100)}%` }}
@@ -165,11 +165,11 @@ export default function ConceptDistribution({
               <div className="w-20 shrink-0 text-right text-sm tabular-nums">
                 {pct(f.fire_rate)}
               </div>
-              <div className="w-24 shrink-0 text-right text-xs text-slate-500 tabular-nums">
+              <div className="hidden w-24 shrink-0 text-right text-xs text-slate-500 tabular-nums md:block">
                 {f.n_active.toLocaleString()} rows
               </div>
               {dist.groups.length > 1 && (
-                <div className="w-24 shrink-0">
+                <div className="hidden w-24 shrink-0 xl:block">
                   <GroupBars rates={f.group_fire_rate} groups={dist.groups} />
                 </div>
               )}

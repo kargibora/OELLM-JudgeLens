@@ -1,6 +1,7 @@
 export interface Meta {
   lens: string;
   input_rep?: string | null; // "individual" | "difference" | "prompt" — drives the lens description
+  dataset_mode?: "single" | "paired" | string | null;
   embed_model_id: string | null;
   m_total: number;
   k: number;
@@ -44,7 +45,7 @@ export interface Feature {
   p_bonferroni?: number;
   fidelity_pass?: boolean;
   // full fidelity verdict (un-dropped from feature_fidelity.csv)
-  fidelity_n?: number; // # held-out pairs the verifier judged
+  fidelity_n?: number; // # held-out examples the verifier judged
   precision?: number;
   recall?: number;
   f1?: number;
@@ -59,7 +60,24 @@ export interface Feature {
   semantic_coverage?: number | null;
   silent_concept_rate?: number | null;
   semantic_role?: string;
+  semantic_family?: "behavioral" | "prompt_specific" | "mixed_or_unclear" | string;
+  classification_status?: string;
+  role_confidence?: string;
+  role_agreement?: number | null;
+  prompt_relation?: string;
+  relation_agreement?: number | null;
   requested_share?: number | null;
+  elicited_share?: number | null;
+  prompt_driven_share?: number | null;
+  independent_share?: number | null;
+  prompt_scope?: string;
+  behavior_scope?: string;
+  feature_summary?: string;
+  n_examples?: number;
+  n_labelled?: number;
+  n_present?: number;
+  label_coverage?: number | null;
+  concept_present_rate?: number | null;
   presence_pass?: boolean;
   semantic_presence_rate?: number | null;
   prompt_dependence_nmi?: number | null;

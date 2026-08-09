@@ -243,6 +243,26 @@ export default function FeaturePanel({
                 </div>
               </div>
               <FidelityMetrics f={feat} />
+              {feat.semantic_role && (
+                <div className="mt-3 border-t border-edge/60 pt-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Prompt–response role assessment
+                  </p>
+                  {feat.feature_summary && (
+                    <p className="mt-1 text-xs leading-relaxed text-slate-300">
+                      {feat.feature_summary}
+                    </p>
+                  )}
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    {String(feat.semantic_family ?? "unclassified").replace(/_/g, " ")}
+                    {` · role: ${String(feat.semantic_role).replace(/_/g, " ")}`}
+                    {feat.prompt_relation && ` · ${String(feat.prompt_relation).replace(/_/g, " ")}`}
+                    {feat.n_present != null && feat.n_examples != null
+                      && ` · visible in ${feat.n_present}/${feat.n_examples} sampled activations`}
+                    {feat.role_confidence && ` · ${feat.role_confidence} confidence`}
+                  </p>
+                </div>
+              )}
               <p className="mt-2 text-[11px] text-slate-500">
                 category: <span className="text-slate-300">{
                   (feat.behavior_category ?? "unclassified").replace(/_/g, " ")
@@ -278,19 +298,19 @@ function FidelityMetrics({ f }: { f: Feature }) {
   const add = (k: string, v: string | null, tip: string, tone?: "good" | "bad") => {
     if (v != null) chips.push({ k, v, tip, tone });
   };
-  add("F1", num(f.f1), "harmonic mean of precision and recall on the held-out pairs");
+  add("F1", num(f.f1), "harmonic mean of precision and recall on held-out examples");
   add("precision", num(f.precision), "when the verifier said 'label present', how often the feature fired");
-  add("recall", num(f.recall), "of the pairs where the feature fired, how many the verifier confirmed");
-  add("FP rate", num(f.fp_rate), "how often the verifier saw the label in pairs where the feature was silent");
+  add("recall", num(f.recall), "of the examples where the feature fired, how many the verifier confirmed");
+  add("FP rate", num(f.fp_rate), "how often the verifier saw the label where the feature was silent");
   add("corr", num(f.correlation),
-    "verifier-vs-feature correlation on held-out pairs — one input to the configured multi-part pass rule");
+    "verifier-vs-feature correlation on held-out examples — one input to the configured multi-part pass rule");
   add("agreement", num(f.agreement), "raw verifier/feature agreement rate");
   if (!chips.length) return null;
   return (
     <div className="mt-3 border-t border-edge/60 pt-2">
       <p className="mb-1.5 text-[11px] text-slate-500">
         <span className="uppercase tracking-wider">verification</span>
-        {f.fidelity_n != null && <> — an LLM verifier re-judged {f.fidelity_n} held-out pairs against this label</>}
+        {f.fidelity_n != null && <> — an LLM verifier re-judged {f.fidelity_n} held-out examples against this label</>}
       </p>
       <div className="flex flex-wrap items-center gap-1.5">
         {chips.map(({ k, v, tip, tone }) => (
@@ -353,7 +373,8 @@ function ActivatedBy({ elicitation, fid, responseName, unverified, onJumpPrompt 
         </label>
       )}
       {rows.length === 0 ? <p className="px-1 py-3 text-sm text-slate-500">
-        {unverified ? "This feature hasn't passed verification — prompt-association analysis only runs on verified features."
+        {!elicitation ? "No prompt–response linkage artifact is included in this bundle."
+          : unverified ? "This feature hasn't passed verification — prompt-association analysis only runs on verified features."
           : "No specific prompt raises this feature above its base rate (it fires broadly)."}</p> :
         rows.map((r) => <ConceptBarRow key={r.id} id={r.id} name={r.name} value={`×${r.lift.toFixed(1)}`}
           title={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
