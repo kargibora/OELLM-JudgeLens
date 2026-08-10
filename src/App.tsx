@@ -729,11 +729,11 @@ function DistributionRoute({ features }: { features: Feature[] }) {
       onSelectConcept={setSelected} />
     {selected != null && activeKind === "response" && (
       <ConceptDetailDrawer featureId={selected} features={features}
-        initialGroup={group} onClose={() => setSelected(null)} onSelectFeature={setSelected} />
+        onClose={() => setSelected(null)} onSelectFeature={setSelected} />
     )}
     {selected != null && activeKind === "prompt" && (
       <PromptConceptDetailDrawer featureId={selected} features={promptFeatureRows}
-        initialGroup={group} onClose={() => setSelected(null)} onSelectFeature={setSelected} />
+        onClose={() => setSelected(null)} onSelectFeature={setSelected} />
     )}
   </>;
 }

@@ -1,7 +1,7 @@
 import { Filter, RotateCcw } from "lucide-react";
 import { useEffect, useMemo } from "react";
 
-import { useAnalysisFilters } from "../analysisFilters";
+import { answerTypeLabel, useAnalysisFilters } from "../analysisFilters";
 import { useDataArtifact, type DatasetInfo } from "../data";
 import type { ConceptDistribution, Feature } from "../types";
 
@@ -101,7 +101,7 @@ export default function AnalysisFilterBar({
       {(filters.group || filters.answerType !== "all") && (
         <p className="mt-2 border-t border-edge/60 pt-2 text-[10px] leading-relaxed text-slate-500">
           {filters.group && <>Showing <span className="font-medium text-slate-300">{column}={filters.group}</span>. </>}
-          {filters.answerType !== "all" && <>Showing answer concepts of type <span className="font-medium text-slate-300">{filters.answerType.replace(/_/g, " ")}</span>. </>}
+          {filters.answerType !== "all" && <>Showing answer concepts of type <span className="font-medium text-slate-300">{answerTypeLabel(filters.answerType)}</span>. </>}
           If a result cannot be recalculated for this filter, the page says that clearly.
         </p>
       )}

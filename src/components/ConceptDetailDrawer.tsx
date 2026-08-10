@@ -11,13 +11,11 @@ import { answerTypeOf, useAnalysisFilters } from "../analysisFilters";
 export default function ConceptDetailDrawer({
   featureId,
   features,
-  initialGroup = "",
   onClose,
   onSelectFeature,
 }: {
   featureId: number;
   features: Feature[];
-  initialGroup?: string;
   onClose: () => void;
   onSelectFeature: (featureId: number) => void;
 }) {
@@ -29,13 +27,17 @@ export default function ConceptDetailDrawer({
   const [activePair, setActivePair] = useState<string | null>(null);
   const [activePrompt, setActivePrompt] = useState<number | null>(null);
   const { filters, setGroup } = useAnalysisFilters();
-  const group = initialGroup || filters.group;
+  const group = filters.group;
   const [mode, setMode] = useState<EvidenceMode>("strongest");
   const [exampleIndex, setExampleIndex] = useState(0);
   const featureById = useMemo(() => new Map(features.map((row) => [row.feature_id, row])), [features]);
 
-  useEffect(() => { setActivePair(null); setActivePrompt(null); setMode("strongest"); setExampleIndex(0); }, [featureId, initialGroup]);
+  useEffect(() => { setActivePair(null); setActivePrompt(null); setMode("strongest"); setExampleIndex(0); }, [featureId]);
   useEffect(() => { setExampleIndex(0); }, [group, mode]);
+  useEffect(() => {
+    if (feature && filters.answerType !== "all" && answerTypeOf(feature) !== filters.answerType)
+      onClose();
+  }, [feature, filters.answerType, onClose]);
 
   const pairs = useMemo(() => (coactivation?.pairs ?? [])
     .filter((pair) => pair.a === featureId || pair.b === featureId)
@@ -73,7 +75,11 @@ export default function ConceptDetailDrawer({
   const ownExamples = useMemo(() => allExamples.filter((row) =>
     (!group || row.group === group) && evidenceMode(row.selectionKind) === effectiveMode,
   ).slice(0, 5), [allExamples, group, effectiveMode]);
-  const maxHint = distribution?.features.find((row) => row.feature_id === featureId)?.max_activation;
+  const distributionFeature = distribution?.features.find((row) => row.feature_id === featureId);
+  const maxHint = distributionFeature?.max_activation;
+  const answerShare = group
+    ? distributionFeature?.group_fire_rate?.[group]
+    : feature?.semantic_presence_rate ?? feature?.generality ?? feature?.fire_rate;
   const domain = useMemo(() => activationDomain(allExamples.map((row) => row.z), maxHint), [allExamples, maxHint]);
   const groupColumn = allExamples.find((row) => row.groupColumn)?.groupColumn ?? distribution?.group_column ?? "language";
   const missingGroupMetadata = Boolean(group && examples && groups.length === 0);
@@ -86,7 +92,7 @@ export default function ConceptDetailDrawer({
           {feature?.feature_summary || "This name was suggested by an LLM. Check the examples before using it."}
         </p>
         <dl className="mt-5 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Answer share</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.semantic_presence_rate ?? feature?.generality ?? feature?.fire_rate, 2)}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Answer share{group ? ` · ${group}` : ""}</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(answerShare, 2)}</dd></div>
           <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Answer type</dt><dd className="mt-1 text-sm text-slate-200">{feature?.semantic_family?.replace(/_/g, " ") ?? "not classified"}</dd></div>
           <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Scope</dt><dd className="mt-1 text-sm text-slate-200">{feature?.behavior_category?.replace(/_/g, " ") ?? "not classified"}</dd></div>
           <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Label agreement</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.agreement, 0)}</dd></div>

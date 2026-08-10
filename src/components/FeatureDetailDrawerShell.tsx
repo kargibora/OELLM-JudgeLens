@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { X } from "lucide-react";
 
 import type { Feature } from "../types";
+import { answerTypeLabel, useAnalysisFilters } from "../analysisFilters";
 import { ConceptLabel, VerifiedBadge } from "./ui";
 
 export default function FeatureDetailDrawerShell({
@@ -30,6 +31,13 @@ export default function FeatureDetailDrawerShell({
   }, [onClose]);
 
   const response = kind === "response";
+  const { filters } = useAnalysisFilters();
+  const activeFilters = [
+    ...(filters.group ? [`${filters.groupColumn}: ${filters.group}`] : []),
+    ...(response && filters.answerType !== "all"
+      ? [`answer type: ${answerTypeLabel(filters.answerType)}`]
+      : []),
+  ];
   const closeLabel = response ? "Close concept details" : "Close prompt concept details";
   const ariaLabel = response
     ? `Concept ${featureId} details`
@@ -51,18 +59,25 @@ export default function FeatureDetailDrawerShell({
           <div className="flex items-start gap-4">
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-accent-soft">
-                {response ? "Response concept evidence" : "Prompt concept evidence"}
+                {response ? "Answer concept evidence" : "Prompt concept evidence"}
               </div>
               <h2 className="mt-1.5 text-xl font-semibold leading-snug tracking-tight text-slate-50 sm:text-2xl">
                 <ConceptLabel id={featureId} name={feature?.concept} wrap />
               </h2>
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                 <VerifiedBadge pass={feature?.fidelity_pass} n={feature?.fidelity_n} />
-                <span className="font-mono text-[11px] text-slate-500">sparse axis #{featureId}</span>
+                <span className="font-mono text-[11px] text-slate-500">feature #{featureId}</span>
                 <span className="text-[11px] text-slate-600">
-                  corpus evidence · statistical relationships
+                  {activeFilters.length
+                    ? "filtered examples · dataset-wide relationship numbers"
+                    : "dataset examples · dataset-wide relationships"}
                 </span>
               </div>
+              {activeFilters.length > 0 && (
+                <p className="mt-2 text-[11px] text-slate-400">
+                  Using {activeFilters.join(" · ")}. Relationship percentages and counts still use the full dataset.
+                </p>
+              )}
             </div>
             <button
               type="button"
