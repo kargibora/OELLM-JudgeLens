@@ -572,6 +572,8 @@ export interface ConceptDistribution {
   groups: string[];
   group_column: string | null;
   code_array: string;
+  selection?: "all" | "named" | "verified" | string;
+  n_total_features?: number;
   features: ConceptDistributionFeature[];
 }
 

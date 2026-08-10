@@ -14,7 +14,13 @@ const SORTS: { value: Sort; label: string }[] = [
 const pct = (v: number) => `${(v * 100).toFixed(v < 0.01 ? 2 : 1)}%`;
 
 /** Concepts-per-row histogram, trimmed to the populated range. */
-function CountHistogram({ histogram }: { histogram: number[] }) {
+function CountHistogram({
+  histogram,
+  rowKind,
+}: {
+  histogram: number[];
+  rowKind: "response" | "prompt";
+}) {
   const trimmed = useMemo(() => {
     let end = histogram.length;
     while (end > 1 && histogram[end - 1] === 0) end--;
@@ -23,11 +29,11 @@ function CountHistogram({ histogram }: { histogram: number[] }) {
   const max = useMemo(() => trimmed.reduce((m, v) => (v > m ? v : m), 0), [trimmed]);
   if (!max) return null;
   return (
-    <div className="flex items-end gap-px h-24" aria-label="concepts per response">
+    <div className="flex items-end gap-px h-24" aria-label={`concepts per ${rowKind}`}>
       {trimmed.map((count, i) => (
         <div
           key={i}
-          title={`${count.toLocaleString()} responses activate ${i} concept${i === 1 ? "" : "s"}`}
+          title={`${count.toLocaleString()} ${rowKind}${count === 1 ? "" : "s"} activate ${i} concept${i === 1 ? "" : "s"}`}
           className="flex-1 min-w-[2px] bg-accent/60 hover:bg-accent rounded-t"
           style={{ height: `${Math.max(1, (count / max) * 100)}%` }}
         />
@@ -56,9 +62,11 @@ function GroupBars({ rates, groups }: { rates?: Record<string, number>; groups: 
 
 export default function ConceptDistribution({
   dist,
+  kind = "response",
   onSelectConcept,
 }: {
   dist: Dist;
+  kind?: "response" | "prompt";
   onSelectConcept?: (featureId: number) => void;
 }) {
   const [sort, setSort] = useState<Sort>("prevalence");
@@ -83,26 +91,33 @@ export default function ConceptDistribution({
 
   const maxRate = rows.length ? rows.reduce((m, f) => Math.max(m, f.fire_rate), 0) : 1;
   const q = dist.concepts_per_row.quantiles;
+  const rowKind = kind === "prompt" ? "prompt" : "response";
+  const RowKind = kind === "prompt" ? "Prompts" : "Responses";
+  const conceptKind = kind === "prompt" ? "prompt concepts" : "response concepts";
 
   return (
     <div className="space-y-4">
       <Explain>
-        How concepts are spread across the dataset: how much of the corpus each concept
-        covers, how many concepts a typical response activates, and which concepts never
-        fire at all. Prevalence is measured on the lens's own codes, independent of any
-        preference label.
+        How {conceptKind} are spread across the dataset: how much of the corpus each concept
+        covers, how many concepts a typical {rowKind} activates, and which interpreted
+        concepts never fire at all. Prevalence is measured on the {rowKind} lens's own
+        sparse codes, independent of any preference label. This view summarizes{" "}
+        {dist.n_features.toLocaleString()} {dist.selection === "verified" ? "verified" : dist.selection === "named" ? "named" : "retained"}{" "}
+        concepts{dist.n_total_features != null && dist.n_total_features !== dist.n_features
+          ? ` from ${dist.n_total_features.toLocaleString()} sparse axes`
+          : ""}.
       </Explain>
 
       <Card>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Metric label="Responses" value={dist.n_rows.toLocaleString()} />
+          <Metric label={RowKind} value={dist.n_rows.toLocaleString()} />
           <Metric
             label="Coverage"
             value={pct(dist.coverage)}
             sub="activate ≥1 concept"
           />
           <Metric
-            label="Concepts per response"
+            label={`Concepts per ${rowKind}`}
             value={dist.concepts_per_row.mean.toFixed(1)}
             sub={q["0.5"] !== undefined ? `median ${q["0.5"]}, p99 ${q["0.99"]}` : undefined}
           />
@@ -114,9 +129,9 @@ export default function ConceptDistribution({
         </div>
         <div className="mt-4">
           <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-2">
-            Concepts activated per response
+            Concepts activated per {rowKind}
           </div>
-          <CountHistogram histogram={dist.concepts_per_row.histogram} />
+          <CountHistogram histogram={dist.concepts_per_row.histogram} rowKind={rowKind} />
         </div>
       </Card>
 
@@ -126,9 +141,9 @@ export default function ConceptDistribution({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter concepts…"
+            placeholder={`Filter ${conceptKind}…`}
             className="flex-1 min-w-[12rem] rounded-lg border border-edge/70 bg-ink/60 px-2.5 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent/50 focus:outline-none"
-            aria-label="Filter concepts"
+            aria-label={`Filter ${conceptKind}`}
           />
           <span className="text-xs text-slate-500">{rows.length.toLocaleString()} shown</span>
         </div>
@@ -166,7 +181,7 @@ export default function ConceptDistribution({
                 {pct(f.fire_rate)}
               </div>
               <div className="hidden w-24 shrink-0 text-right text-xs text-slate-500 tabular-nums md:block">
-                {f.n_active.toLocaleString()} rows
+                {f.n_active.toLocaleString()} {rowKind}s
               </div>
               {dist.groups.length > 1 && (
                 <div className="hidden w-24 shrink-0 xl:block">

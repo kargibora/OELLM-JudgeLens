@@ -16,7 +16,11 @@ The repository works both as a standalone Vite application and as the
 - **Discover** — analysis coverage, SAE reconstruction, verification, and direct paths
   into prompt-, behavior-, and model-first exploration.
 - **Prompt behavior** — prompt features or clusters, response behaviors they elicit,
-  conditional preference associations, support, and matched prompt–response evidence.
+  conditional preference associations, support, matched prompt–response evidence, and
+  prompt concepts that are frequently active on the same requests.
+- **Concept distribution** — switch between response and prompt sparse-code spaces to
+  inspect corpus coverage, concepts per item, prevalence, group differences, and evidence
+  for any listed concept.
 - **Behaviors** — searchable response features with fidelity, prevalence, prompt
   associations, conditional effects, and activation examples. Selecting an associated
   prompt shows a response where both sparse concepts activate.
@@ -32,9 +36,9 @@ The repository works both as a standalone Vite application and as the
   prompt links, and co-activation neighbors. Pair drill-ins show
   transcripts where both sparse axes fire, including both activation magnitudes. Separate sampled
   response, battle, and prompt scatters remain available when exported.
-- **Concept details** — distribution rows open an in-context evidence drawer with the
-  exact feature, fidelity, strongest responses, co-activation examples, prompt links,
-  and matched prompt–response evidence.
+- **Concept details** — distribution rows open the appropriate response or prompt evidence
+  drawer with the exact sparse axis, fidelity, strongest activators, and co-activation
+  examples; response drawers also include prompt links and matched prompt–response evidence.
 
 Heavy artifacts are loaded by route and transcripts are requested explicitly. A complete
 bundle no longer blocks the first render.

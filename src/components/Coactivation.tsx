@@ -46,16 +46,22 @@ export default function Coactivation({
     () => pairs.reduce((m, p) => (p.lift > m ? p.lift : m), 0) || 1,
     [pairs],
   );
+  const selectedName = useMemo(() => {
+    if (selected == null) return null;
+    for (const pair of coact.pairs) {
+      if (pair.a === selected) return nameOf(pair, "a");
+      if (pair.b === selected) return nameOf(pair, "b");
+    }
+    return conceptLabel(selected, null);
+  }, [coact.pairs, selected]);
 
   return (
     <div className="space-y-4">
       <Explain>
-        Concepts that fire together on the same response more often than independence
-        predicts. Lift is P(both) ÷ P(a)·P(b) — above 1 means they co-occur, and a pair
-        near 1 is just two common concepts meeting by chance. Ranked per concept, so a
-        few dense concepts cannot crowd out the rest. The examples have high joint sparse
-        activation; inspect their text because nonzero activation is not a calibrated claim
-        that both labels are semantically present.
+        Each row contains two response concepts found together more often than their
+        individual frequencies would suggest. A value of 2× means the pair appears together
+        twice as often as expected. Open the examples to inspect the actual responses;
+        co-activation is descriptive and does not show that either concept causes the other.
       </Explain>
 
       <Card>
@@ -77,7 +83,9 @@ export default function Coactivation({
             onChange={setScope}
             options={[
               { value: "all" as Scope, label: "All pairs" },
-              { value: "selected" as Scope, label: "Selected concept" },
+              ...(selected != null
+                ? [{ value: "selected" as Scope, label: `Pairs with #${selected}`, title: selectedName ?? undefined }]
+                : []),
             ]}
           />
           <input
@@ -90,9 +98,10 @@ export default function Coactivation({
           <span className="text-xs text-slate-500">{pairs.length.toLocaleString()} shown</span>
         </div>
 
-        {scope === "selected" && selected == null && (
-          <div className="text-sm text-slate-500 py-4">
-            Pick a concept to see only the pairs it takes part in.
+        {scope === "selected" && selected != null && (
+          <div className="mb-3 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-slate-400">
+            Showing pairs that include <span className="font-medium text-slate-200">{selectedName}</span>{" "}
+            <span className="font-mono text-slate-500">#{selected}</span>.
           </div>
         )}
 

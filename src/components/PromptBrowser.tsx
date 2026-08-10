@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import type { Coactivation, ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
+import type { ConceptCoactivation, ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
 import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, Segmented, clip, divergeColor, WINRATE_REF } from "./ui";
 import { pct, usePromptExamples } from "../data";
 import JointEvidence from "./JointEvidence";
+import CoactivationPairEvidence from "./CoactivationPairEvidence";
 
 // Prompt-first browser: pick a prompt concept and read, on one page, what responses it
 // tends to elicit (co-activation lift) and which of those actually help win it (the
@@ -31,12 +32,11 @@ export default function PromptBrowser({
   canLoadExamples?: boolean;
   onLoadExamples?: () => void;
   promptFeatures: PromptFeatures | null;
-  coactivation: Coactivation | null;
+  coactivation: ConceptCoactivation | null;
   hasLabels?: boolean;
   focus?: { pc: number } | null;
   onJumpFeature?: (cf: number) => void;
 }) {
-  const [showCompound, setShowCompound] = useState(false);
   const [keyspace, setKeyspace] = useState<"raw" | "clustered">("raw");
   const cond = keyspace === "clustered" ? conditional?.clustered ?? null : conditional?.raw ?? null;
   const clustered = keyspace === "clustered";
@@ -146,50 +146,6 @@ export default function PromptBrowser({
         </div>
       )}
 
-      {!clustered && coactivation && coactivation.pairs.length > 0 && (
-        <Card>
-          <button onClick={() => setShowCompound((s) => !s)}
-            className="flex w-full items-center justify-between text-left">
-            <h3 className="text-sm font-semibold text-slate-200">
-              Compound prompt concepts — prompt types that co-occur
-            </h3>
-            <span className="text-xs text-slate-500">
-              {coactivation.n_significant} significant pairs · {showCompound ? "hide" : "show"}
-            </span>
-          </button>
-          {showCompound && (
-            <>
-              <p className="mb-2 mt-1 text-[11px] leading-snug text-slate-500">
-                Prompt concepts that fire together above chance (lift = P(A∧B)/P(A)P(B)) — a
-                "compound vocabulary" (e.g. Excel ∧ SQL = data-tooling prompts). Descriptive
-                co-occurrence, symmetric and not causal.
-              </p>
-              <div className="flex flex-col gap-0.5">
-                {coactivation.pairs.slice(0, 25).map((p, i) => {
-                  const mx = coactivation.pairs[0]?.lift ?? 1;
-                  return (
-                    <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
-                      <span className="min-w-0 flex-1 truncate" title={`${p.na} ∧ ${p.nb}`}>
-                        <span className="text-slate-200">{p.na}</span>
-                        <span className="text-slate-500"> ∧ </span>
-                        <span className="text-slate-200">{p.nb}</span>
-                      </span>
-                      <span className="hidden h-2 w-24 shrink-0 overflow-hidden rounded-full bg-edge/40 sm:block">
-                        <span className="block h-full rounded-full bg-accent"
-                          style={{ width: `${Math.round(Math.min(1, p.lift / mx) * 100)}%` }} />
-                      </span>
-                      <span className="w-14 shrink-0 text-right tabular-nums text-slate-300">
-                        ×{p.lift.toFixed(1)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </Card>
-      )}
-
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         {/* prompt-concept list */}
         <Card className="h-fit lg:sticky lg:top-4">
@@ -279,6 +235,8 @@ export default function PromptBrowser({
               </p>
             </Card>
             {!clustered && <PromptExamplesPanel featureId={sel} />}
+            {!clustered && <PromptCoactivationPanel coactivation={coactivation} pc={sel}
+              onSelectPrompt={setSel} />}
             {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} onJumpFeature={onJumpFeature} />}
             {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
             {/* report_battles keys concepts by their raw name (bare id string when unnamed),
@@ -289,6 +247,74 @@ export default function PromptBrowser({
         )}
       </div>
     </div>
+  );
+}
+
+function PromptCoactivationPanel({
+  coactivation,
+  pc,
+  onSelectPrompt,
+}: {
+  coactivation: ConceptCoactivation | null;
+  pc: number;
+  onSelectPrompt: (featureId: number) => void;
+}) {
+  const [openPair, setOpenPair] = useState<string | null>(null);
+  useEffect(() => { setOpenPair(null); }, [pc]);
+  const pairs = useMemo(() => (coactivation?.pairs ?? [])
+    .filter((pair) => pair.a === pc || pair.b === pc)
+    .sort((a, b) => b.lift - a.lift || b.count - a.count)
+    .slice(0, 10), [coactivation, pc]);
+  const active = pairs.find((pair) => `${pair.a}-${pair.b}` === openPair) ?? null;
+
+  if (!coactivation) return null;
+  return (
+    <Card>
+      <h4 className="text-sm font-semibold text-slate-200">Often appears with</h4>
+      <p className="mb-3 mt-0.5 text-[11px] leading-relaxed text-slate-500">
+        Other prompt concepts active on the same requests more often than expected from
+        their individual frequencies. This describes overlapping request types; it is not
+        evidence that one concept causes the other.
+      </p>
+      {pairs.length === 0 ? (
+        <p className="py-2 text-sm text-slate-500">No retained co-activation neighbor for this prompt concept.</p>
+      ) : (
+        <div className="space-y-1">
+          {pairs.map((pair) => {
+            const other = pair.a === pc ? pair.b : pair.a;
+            const otherName = pair.a === pc ? pair.b_concept : pair.a_concept;
+            const key = `${pair.a}-${pair.b}`;
+            return (
+              <div key={key} className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 hover:bg-edge/35">
+                <button type="button" onClick={() => onSelectPrompt(other)}
+                  className="min-w-0 flex-1 truncate text-left text-sm text-slate-300 hover:underline"
+                  title={conceptLabel(other, otherName)}>
+                  <ConceptLabel id={other} name={otherName} />
+                </button>
+                <span className="shrink-0 font-mono text-xs text-accent-soft" title="co-activation lift">
+                  {pair.lift.toFixed(1)}×
+                </span>
+                <span className="hidden w-24 shrink-0 text-right text-xs text-slate-500 sm:block">
+                  {pair.count.toLocaleString()} prompts
+                </span>
+                {pair.rows.length > 0 && coactivation.examples && (
+                  <button type="button" onClick={() => setOpenPair(openPair === key ? null : key)}
+                    aria-expanded={openPair === key}
+                    className="shrink-0 rounded border border-edge px-2 py-1 text-xs text-slate-400 hover:bg-edge/40">
+                    {openPair === key ? "Hide" : "Examples"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {active && (
+        <div className="mt-3">
+          <CoactivationPairEvidence pair={active} coactivation={coactivation} kind="prompt" limit={4} />
+        </div>
+      )}
+    </Card>
   );
 }
 

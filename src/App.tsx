@@ -28,7 +28,6 @@ import type {
   ConceptCoactivation as ConceptCoactivationType,
   BiasRow,
   Bundle,
-  Coactivation,
   ConditionalBundle,
   Diagnosis,
   ElicitationData,
@@ -65,6 +64,7 @@ const MapsTab = lazy(() => import("./components/MapsTab"));
 const ConceptDistributionView = lazy(() => import("./components/ConceptDistribution"));
 const CoactivationView = lazy(() => import("./components/Coactivation"));
 const ConceptDetailDrawer = lazy(() => import("./components/ConceptDetailDrawer"));
+const PromptConceptDetailDrawer = lazy(() => import("./components/PromptConceptDetailDrawer"));
 
 export type ViewId = "discover" | "distribution" | "prompts" | "behaviors" | "coactivation" | "models" | "reliability" | "atlas";
 
@@ -88,7 +88,7 @@ const VIEWS: {
   requires?: string;
 }[] = [
   { id: "discover", label: "Discover", description: "What the lens found", icon: Compass },
-  { id: "distribution", label: "Concept distribution", description: "What this dataset contains", icon: BarChart3, requires: "concept_distribution.json" },
+  { id: "distribution", label: "Concept distribution", description: "What prompts and responses contain", icon: BarChart3, requires: "concept_distribution.json|prompt_concept_distribution.json" },
   { id: "prompts", label: "Prompt context", description: "When users ask X", icon: MessageSquareText, group: "Explore", requires: "prompt_features.json|elicitation.json|prompt_map.json" },
   { id: "behaviors", label: "Response concepts", description: "Inspect what responses express", icon: Activity },
   { id: "coactivation", label: "Co-activation", description: "Concepts that fire together", icon: Share2, requires: "coactivation.json" },
@@ -140,9 +140,10 @@ function PromptRoute({
   const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
   const conditionalRaw = useDataArtifact<unknown>("conditional.json");
   const elicitation = useDataArtifact<ElicitationData>("elicitation.json");
-  // Completion-feature co-activation is a different keyspace and must never be shown
-  // as compound prompt concepts. A dedicated prompt artifact can be added independently.
-  const promptCoactivation = useDataArtifact<Coactivation>("prompt_coactivation.json");
+  // Completion and prompt co-activation use different sparse-axis keyspaces. Load the
+  // dedicated prompt artifact here; substituting response pairs produces plausible but
+  // incorrect names and counts.
+  const promptCoactivation = useDataArtifact<ConceptCoactivationType>("prompt_coactivation.json");
   const [wantExamples, setWantExamples] = useState(false);
   const reportBattles = useDataArtifact<ReportBattles>(wantExamples ? "report_battles.json" : null);
   const examplesAvailable = client.hasArtifact("report_battles.json");
@@ -663,14 +664,50 @@ function Brand() {
 }
 
 function DistributionRoute({ features }: { features: Feature[] }) {
-  const dist = useDataArtifact<ConceptDistributionType>("concept_distribution.json");
+  const responseDist = useDataArtifact<ConceptDistributionType>("concept_distribution.json");
+  const promptDist = useDataArtifact<ConceptDistributionType>("prompt_concept_distribution.json");
+  const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
+  const [kind, setKind] = useState<"response" | "prompt">("response");
   const [selected, setSelected] = useState<number | null>(null);
-  if (dist === undefined) return <SkeletonList n={2} itemClass="h-48" />;
-  if (!dist) return <ArtifactNotice>This bundle has no <code>concept_distribution.json</code>. Re-run <code>prefscope-viewer</code> to add it.</ArtifactNotice>;
+
+  useEffect(() => {
+    if (responseDist === null && promptDist) setKind("prompt");
+  }, [responseDist, promptDist]);
+
+  if (responseDist === undefined || promptDist === undefined || promptFeatures === undefined)
+    return <SkeletonList n={2} itemClass="h-48" />;
+  if (!responseDist && !promptDist)
+    return <ArtifactNotice>This bundle has no concept-distribution artifact. Re-export it with <code>prefscope-export-viewer</code>.</ArtifactNotice>;
+
+  const available = [
+    ...(responseDist ? [{ value: "response" as const, label: "Response concepts" }] : []),
+    ...(promptDist ? [{ value: "prompt" as const, label: "Prompt concepts" }] : []),
+  ];
+  const activeKind = kind === "prompt" && promptDist ? "prompt" : "response";
+  const dist = activeKind === "prompt" ? promptDist : responseDist;
+  const promptFeatureRows: Feature[] = (promptFeatures?.features ?? []).map((row) => ({ ...row }));
+
+  if (!dist) return null;
   return <>
-    <ConceptDistributionView dist={dist} onSelectConcept={setSelected} />
-    {selected != null && <ConceptDetailDrawer featureId={selected} features={features}
-      onClose={() => setSelected(null)} onSelectFeature={setSelected} />}
+    {available.length > 1 && (
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-edge/70 bg-panel/55 p-2">
+        <Segmented
+          value={activeKind}
+          onChange={(next) => { setKind(next); setSelected(null); }}
+          options={available}
+        />
+        <span className="hidden pr-2 text-xs text-slate-500 sm:block">Choose the sparse code space to summarize</span>
+      </div>
+    )}
+    <ConceptDistributionView dist={dist} kind={activeKind} onSelectConcept={setSelected} />
+    {selected != null && activeKind === "response" && (
+      <ConceptDetailDrawer featureId={selected} features={features}
+        onClose={() => setSelected(null)} onSelectFeature={setSelected} />
+    )}
+    {selected != null && activeKind === "prompt" && (
+      <PromptConceptDetailDrawer featureId={selected} features={promptFeatureRows}
+        onClose={() => setSelected(null)} onSelectFeature={setSelected} />
+    )}
   </>;
 }
 
