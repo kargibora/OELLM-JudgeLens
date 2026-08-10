@@ -298,7 +298,7 @@ export default function FeatureAtlasView({
       <Explain>
         Every dot is one {kind === "prompt" ? "prompt" : "response"} SAE feature. Position is a
         UMAP of decoder directions using cosine distance; names do not determine geometry.
-        Click a feature to inspect its strongest examples. Lines show observed {kind === "prompt" ? "prompt" : "response"}
+        Click a feature to inspect its strongest examples. Lines show observed {kind === "prompt" ? "prompt" : "response"}{" "}
         co-activation and are a separate corpus-level association, not proof that either
         label is present or causal.
       </Explain>

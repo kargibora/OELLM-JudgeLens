@@ -24,9 +24,12 @@ The repository works both as a standalone Vite application and as the
   prompt-type performance, and evidence drill-downs.
 - **Reliability** — interpretation fidelity, length-confound screening, and honest
   in-sample versus leave-one-model-out validation.
-- **Feature atlas** — every SAE decoder axis in one searchable UMAP, with fidelity and
-  role filters, corpus examples, and dataset co-activation links. Separate sampled
+- **Feature atlas** — every response and prompt SAE decoder axis in searchable UMAPs,
+  with fidelity filters, corpus examples, and dataset co-activation links. Separate sampled
   response, battle, and prompt scatters remain available when exported.
+- **Concept details** — distribution rows open an in-context evidence drawer with the
+  exact feature, fidelity, strongest responses, co-activation examples, prompt links,
+  and matched prompt–response evidence.
 
 Heavy artifacts are loaded by route and transcripts are requested explicitly. A complete
 bundle no longer blocks the first render.

@@ -19,7 +19,10 @@ from pathlib import Path
 from typing import Any
 
 
-OMIT = {"examples_by_model.json", "examples.json", "examples/", "joint_examples/"}
+OMIT = {
+    "examples_by_model.json", "examples.json", "examples/", "joint_examples/",
+    "prompt_examples/",
+}
 
 REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
@@ -179,6 +182,18 @@ def build(
     if examples_written:
         files.append("examples/")
 
+    prompt_examples_out = output / "prompt_examples"
+    prompt_examples_written = 0
+    for src in sorted((source / "prompt_examples").glob("*.json")):
+        rows = _read(src)
+        if not isinstance(rows, list):
+            continue
+        selected = rows[:feature_examples]
+        _write(prompt_examples_out / src.name, _sanitize(selected, redactions))
+        prompt_examples_written += len(selected)
+    if prompt_examples_out.is_dir():
+        files.append("prompt_examples/")
+
     allowed = _joint_pairs(source)
     joint_out = output / "joint_examples"
     joint_pairs_written = 0
@@ -209,6 +224,7 @@ def build(
         "files": sorted(set(files)),
         "public_profile": {
             "feature_examples_per_feature": feature_examples,
+            "prompt_examples": prompt_examples_written,
             "joint_examples_per_pair": joint_examples,
             "joint_pairs": joint_pairs_written,
             "joint_examples": joint_examples_written,

@@ -64,6 +64,7 @@ const Validation = lazy(() => import("./components/Validation"));
 const MapsTab = lazy(() => import("./components/MapsTab"));
 const ConceptDistributionView = lazy(() => import("./components/ConceptDistribution"));
 const CoactivationView = lazy(() => import("./components/Coactivation"));
+const ConceptDetailDrawer = lazy(() => import("./components/ConceptDetailDrawer"));
 
 export type ViewId = "discover" | "distribution" | "prompts" | "behaviors" | "coactivation" | "models" | "reliability" | "atlas";
 
@@ -610,7 +611,7 @@ export default function App({
               )}
               {view === "distribution" && (
                 overlay ? <OverlayBlocked onModels={() => navigate("models")} />
-                  : <DistributionRoute onJumpFeature={jumpFeature} />
+                  : <DistributionRoute features={bundle.features} />
               )}
               {view === "coactivation" && (
                 overlay ? <OverlayBlocked onModels={() => navigate("models")} />
@@ -661,11 +662,16 @@ function Brand() {
   );
 }
 
-function DistributionRoute({ onJumpFeature }: { onJumpFeature: (fid: number) => void }) {
+function DistributionRoute({ features }: { features: Feature[] }) {
   const dist = useDataArtifact<ConceptDistributionType>("concept_distribution.json");
+  const [selected, setSelected] = useState<number | null>(null);
   if (dist === undefined) return <SkeletonList n={2} itemClass="h-48" />;
   if (!dist) return <ArtifactNotice>This bundle has no <code>concept_distribution.json</code>. Re-run <code>prefscope-viewer</code> to add it.</ArtifactNotice>;
-  return <ConceptDistributionView dist={dist} onSelectConcept={onJumpFeature} />;
+  return <>
+    <ConceptDistributionView dist={dist} onSelectConcept={setSelected} />
+    {selected != null && <ConceptDetailDrawer featureId={selected} features={features}
+      onClose={() => setSelected(null)} onSelectFeature={setSelected} />}
+  </>;
 }
 
 function CoactivationRoute({ focus, onJumpFeature }: { focus: number | null; onJumpFeature: (fid: number) => void }) {
