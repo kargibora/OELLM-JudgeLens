@@ -314,6 +314,40 @@ export interface PromptFeatures {
   features: PromptFeature[];
 }
 
+// Statistical co-firing communities. These organize feature axes; they do not merge
+// their meanings. Member ids remain the canonical identity for examples and reports.
+export interface FeatureClusterMember extends Partial<Omit<Feature, "feature_id">> {
+  feature_id: number;
+}
+export interface FeatureCluster {
+  cluster_id: number;
+  supercluster_id?: number | null;
+  label: string | null;
+  n_features: number;
+  n_named: number;
+  n_verified: number;
+  feature_ids: number[];
+  representative_feature_ids: number[];
+  representative_concepts: string;
+  within_affinity_mean?: number | null;
+  external_affinity_mean?: number | null;
+  affinity_separation?: number | null;
+  within_phi_mean?: number | null;
+  negative_pair_fraction?: number | null;
+  members: FeatureClusterMember[];
+}
+export interface FeatureClusterBundle {
+  kind: "response" | "prompt";
+  method: string | null;
+  n_total_features: number;
+  n_clustered_features: number;
+  n_unclustered_features: number;
+  n_clusters: number;
+  unclustered_feature_ids: number[];
+  diagnostics: Record<string, string | number | boolean | null> | null;
+  clusters: FeatureCluster[];
+}
+
 export interface PromptExample {
   z: number;
   prompt: string;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConceptCoactivation,
   Feature,
+  FeatureClusterBundle,
   FeatureMapData,
   MapData,
   PromptFeatures,
@@ -14,11 +15,14 @@ import FeatureAtlasView from "./FeatureAtlasView";
 import MapView from "./MapView";
 import ResponseMapView from "./ResponseMapView";
 import PromptMapView from "./PromptMapView";
+import ClusterExplorer from "./ClusterExplorer";
 
-type Sub = "features" | "promptFeatures" | "responses" | "battle" | "prompt";
+type Sub = "features" | "featureClusters" | "promptFeatures" | "promptClusters" | "responses" | "battle" | "prompt";
 const SUBS: { id: Sub; label: string; artifact: string }[] = [
   { id: "features", label: "Response feature atlas", artifact: "feature_map.json" },
+  { id: "featureClusters", label: "Response communities", artifact: "feature_clusters.json" },
   { id: "promptFeatures", label: "Prompt feature atlas", artifact: "prompt_feature_map.json" },
+  { id: "promptClusters", label: "Prompt communities", artifact: "prompt_feature_clusters.json" },
   { id: "responses", label: "Response scatter", artifact: "response_map.json" },
   { id: "battle", label: "Battle scatter", artifact: "map.json" },
   { id: "prompt", label: "Prompt scatter", artifact: "prompt_map.json" },
@@ -60,8 +64,10 @@ export default function MapsTab({
   return (
     <div className="flex flex-col gap-4">
       {available.length > 1 && (
-        <Segmented value={sub} onChange={(value) => setSub(value)}
-          options={available.map((item) => ({ value: item.id, label: item.label }))} />
+        <div className="max-w-full overflow-x-auto pb-1">
+          <Segmented value={sub} onChange={(value) => setSub(value)}
+            options={available.map((item) => ({ value: item.id, label: item.label }))} />
+        </div>
       )}
 
       {visited.current.has("features") && available.some((item) => item.id === "features") && (
@@ -73,6 +79,16 @@ export default function MapsTab({
       {visited.current.has("promptFeatures") && available.some((item) => item.id === "promptFeatures") && (
         <div hidden={sub !== "promptFeatures"}>
           <PromptFeatureAtlasPane onOpenPrompt={onOpenPrompt} />
+        </div>
+      )}
+      {visited.current.has("featureClusters") && available.some((item) => item.id === "featureClusters") && (
+        <div hidden={sub !== "featureClusters"}>
+          <ResponseClusterPane features={features} onOpenFeature={onOpenFeature} />
+        </div>
+      )}
+      {visited.current.has("promptClusters") && available.some((item) => item.id === "promptClusters") && (
+        <div hidden={sub !== "promptClusters"}>
+          <PromptClusterPane onOpenPrompt={onOpenPrompt} />
         </div>
       )}
       {visited.current.has("responses") && available.some((item) => item.id === "responses") && (
@@ -88,6 +104,31 @@ export default function MapsTab({
       )}
     </div>
   );
+}
+
+function ResponseClusterPane({
+  features,
+  onOpenFeature,
+}: {
+  features: Feature[];
+  onOpenFeature?: (featureId: number) => void;
+}) {
+  const clusters = useDataArtifact<FeatureClusterBundle>("feature_clusters.json");
+  const map = useMap<FeatureMapData>("feature_map.json");
+  if (clusters === undefined || map === undefined) return <Loading what="response communities" />;
+  if (!clusters) return <Card><p className="text-sm text-slate-400">No response feature communities were exported.</p></Card>;
+  return <ClusterExplorer clusters={clusters} features={features} map={map} kind="response" onOpenFeature={onOpenFeature} />;
+}
+
+function PromptClusterPane({ onOpenPrompt }: { onOpenPrompt?: (featureId: number) => void }) {
+  const clusters = useDataArtifact<FeatureClusterBundle>("prompt_feature_clusters.json");
+  const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
+  const map = useMap<FeatureMapData>("prompt_feature_map.json");
+  if (clusters === undefined || promptFeatures === undefined || map === undefined)
+    return <Loading what="prompt communities" />;
+  if (!clusters) return <Card><p className="text-sm text-slate-400">No prompt feature communities were exported.</p></Card>;
+  const features: Feature[] = (promptFeatures?.features ?? []).map((feature) => ({ ...feature }));
+  return <ClusterExplorer clusters={clusters} features={features} map={map} kind="prompt" onOpenFeature={onOpenPrompt} />;
 }
 
 function PromptFeatureAtlasPane({ onOpenPrompt }: { onOpenPrompt?: (featureId: number) => void }) {

@@ -57,7 +57,7 @@ const statusOf = (feature: Feature | undefined) => {
   return "untested" as const;
 };
 
-function AtlasExamples({ fid, concept }: { fid: number; concept: string }) {
+export function AtlasExamples({ fid, concept }: { fid: number; concept: string }) {
   const raw = useFeatureExamples(fid);
   const paired = useMemo(() => (raw ?? []).some((row) => Boolean(row.completion_b)), [raw]);
   const examples = useMemo(() => (raw ?? []).map((row: Example) => {
@@ -109,7 +109,7 @@ function AtlasExamples({ fid, concept }: { fid: number; concept: string }) {
   );
 }
 
-function PromptAtlasExamples({ fid, concept }: { fid: number; concept: string }) {
+export function PromptAtlasExamples({ fid, concept }: { fid: number; concept: string }) {
   const raw = usePromptExamples(fid);
   const examples = useMemo(
     () => (raw ?? []).slice().sort((a: PromptExample, b: PromptExample) => b.z - a.z).slice(0, 8),

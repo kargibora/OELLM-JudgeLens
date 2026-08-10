@@ -25,7 +25,9 @@ The repository works both as a standalone Vite application and as the
 - **Reliability** — interpretation fidelity, length-confound screening, and honest
   in-sample versus leave-one-model-out validation.
 - **Feature atlas** — every response and prompt SAE decoder axis in searchable UMAPs,
-  with fidelity filters, corpus examples, and dataset co-activation links. Separate sampled
+  with fidelity filters, corpus examples, and dataset co-activation links. Statistical
+  co-firing communities can be browsed without collapsing their individual member axes;
+  every member opens its own interpretation and strongest examples. Separate sampled
   response, battle, and prompt scatters remain available when exported.
 - **Concept details** — distribution rows open an in-context evidence drawer with the
   exact feature, fidelity, strongest responses, co-activation examples, prompt links,
