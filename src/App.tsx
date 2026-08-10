@@ -592,8 +592,8 @@ export default function App({
             </div>
           </header>
 
-          <AnalysisFilterBar datasets={datasets} overlay={overlay} onDatasetChange={changeDataset}
-            features={bundle?.features ?? []} />
+          {bundle && <AnalysisFilterBar datasets={datasets} overlay={overlay} onDatasetChange={changeDataset}
+            features={bundle.features} />}
 
           {bundleNote && (
             <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90">
