@@ -65,17 +65,26 @@ export default function PromptBrowser({
     // labels or a prompt→response linkage table (for example a first-pass SFT atlas).
     // Do not hide those concepts merely because the optional relationship analyses are
     // absent. Counts stay unknown rather than pretending each concept has zero support.
-    const base = cond?.prompt_concepts
-      ?? elicitation?.prompt_concepts?.map((p) => ({ id: p.id, name: p.concept }))
-      ?? promptFeatures?.features.map((p) => ({ id: p.feature_id, name: p.concept ?? null }))
-      ?? [];
-    return base.map((p) => ({
+    const byId = new Map<number, { id: number; name: string | null }>();
+    if (!clustered) {
+      for (const p of promptFeatures?.features ?? [])
+        byId.set(p.feature_id, { id: p.feature_id, name: p.concept ?? null });
+      for (const p of elicitation?.prompt_concepts ?? []) {
+        const old = byId.get(p.id);
+        byId.set(p.id, { id: p.id, name: p.concept ?? old?.name ?? null });
+      }
+    }
+    for (const p of cond?.prompt_concepts ?? []) {
+      const old = byId.get(p.id);
+      byId.set(p.id, { id: p.id, name: p.name ?? old?.name ?? null });
+    }
+    return [...byId.values()].map((p) => ({
       id: p.id,
       name: p.name,
       n: nBy.get(p.id) ?? null,
       maxAbsDelta: effBy.get(p.id) ?? 0,
     }));
-  }, [cond, elicitation, promptFeatures]);
+  }, [clustered, cond, elicitation, promptFeatures]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
