@@ -10,7 +10,7 @@ import JointEvidence from "./JointEvidence";
 // length-controlled Δwin-rate within that prompt type), plus example prompts + outcomes.
 // Replaces the dense feature×prompt heatmap.
 
-type PC = { id: number; name: string | null; n: number; maxAbsDelta: number };
+type PC = { id: number; name: string | null; n: number | null; maxAbsDelta: number };
 
 export default function PromptBrowser({
   conditional,
@@ -61,16 +61,30 @@ export default function PromptBrowser({
       if (c.n != null) nBy.set(c.pc, Math.max(nBy.get(c.pc) ?? 0, c.n));
       if (c.sig) effBy.set(c.pc, Math.max(effBy.get(c.pc) ?? 0, Math.abs(c.delta)));
     }
-    const base = cond?.prompt_concepts ?? elicitation?.prompt_concepts?.map((p) => ({ id: p.id, name: p.concept })) ?? [];
-    return base.map((p) => ({ id: p.id, name: p.name, n: nBy.get(p.id) ?? 0, maxAbsDelta: effBy.get(p.id) ?? 0 }));
-  }, [cond, elicitation]);
+    // A bundle can legitimately contain interpreted prompt axes without preference
+    // labels or a prompt→response linkage table (for example a first-pass SFT atlas).
+    // Do not hide those concepts merely because the optional relationship analyses are
+    // absent. Counts stay unknown rather than pretending each concept has zero support.
+    const base = cond?.prompt_concepts
+      ?? elicitation?.prompt_concepts?.map((p) => ({ id: p.id, name: p.concept }))
+      ?? promptFeatures?.features.map((p) => ({ id: p.feature_id, name: p.concept ?? null }))
+      ?? [];
+    return base.map((p) => ({
+      id: p.id,
+      name: p.name,
+      n: nBy.get(p.id) ?? null,
+      maxAbsDelta: effBy.get(p.id) ?? 0,
+    }));
+  }, [cond, elicitation, promptFeatures]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return concepts
       .filter((p) => !q || conceptLabel(p.id, p.name).toLowerCase().includes(q))
       .filter((p) => clustered || !verifiedOnly || pmeta.get(p.id)?.verified)
-      .sort((a, b) => (sortBy === "n" ? b.n - a.n : b.maxAbsDelta - a.maxAbsDelta || b.n - a.n));
+      .sort((a, b) => (sortBy === "n"
+        ? (b.n ?? -1) - (a.n ?? -1)
+        : b.maxAbsDelta - a.maxAbsDelta || (b.n ?? -1) - (a.n ?? -1)));
   }, [clustered, concepts, query, sortBy, verifiedOnly, pmeta]);
 
   // default / cross-tab focus selection
@@ -84,7 +98,7 @@ export default function PromptBrowser({
     }
   }, [focus, filtered, sel]);
 
-  if (!cond && !elicitation)
+  if (!cond && !elicitation && !(promptFeatures?.features.length))
     return (
       <Card>
         No prompt data in this bundle. Re-export with a prompt lens (elicitation +
@@ -98,11 +112,14 @@ export default function PromptBrowser({
   return (
     <div className="flex flex-col gap-4">
       <Explain>
-        Browse by <b>prompt concept</b>: pick one on the left to see, for that kind of
-        prompt, which response behaviours it tends to <b>elicit</b> (co-activation){hasLabels && <> and which
-        of them actually <b>help win</b> it (length-controlled Δwin-rate within this prompt
-        type)</>}, plus example prompts{hasLabels && " and their outcomes"}. In short — "when users ask this, what
-        do models produce{hasLabels ? ", and what wins?" : "?"}"
+        {elicitation || cond ? <>
+          Browse by <b>prompt concept</b>: pick one on the left to see, for that kind of
+          prompt, which response concepts it tends to <b>elicit</b>{hasLabels && <> and which
+          of them are associated with <b>winning</b> within this prompt type</>}.
+        </> : <>
+          Browse the <b>prompt concepts</b> named by the prompt lens. This bundle does not
+          yet include prompt→response linkage, so it does not claim what each concept elicits.
+        </>}
       </Explain>
 
       {conditional?.clustered && (
@@ -221,9 +238,9 @@ export default function PromptBrowser({
                     <ConceptLabel id={p.id} name={p.name} wrap />
                     {meta?.behavior && <span className="ml-1 text-[10px] text-slate-500">· {meta.behavior}</span>}
                   </span>
-                  <span className="shrink-0 text-right text-xs tabular-nums text-slate-500">
+                  {p.n != null && <span className="shrink-0 text-right text-xs tabular-nums text-slate-500">
                     n={p.n.toLocaleString()}
-                  </span>
+                  </span>}
                 </button>
               );
             })}
@@ -247,7 +264,9 @@ export default function PromptBrowser({
                 </span>
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                what this prompt tends to produce{hasLabels ? ", and what wins it" : ""}
+                {elicitation || cond
+                  ? `what this prompt tends to produce${hasLabels ? ", and what wins it" : ""}`
+                  : "interpreted prompt-lens axis"}
               </p>
             </Card>
             {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} onJumpFeature={onJumpFeature} />}

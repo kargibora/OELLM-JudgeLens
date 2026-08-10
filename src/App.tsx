@@ -139,7 +139,9 @@ function PromptRoute({
   const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
   const conditionalRaw = useDataArtifact<unknown>("conditional.json");
   const elicitation = useDataArtifact<ElicitationData>("elicitation.json");
-  const coactivation = useDataArtifact<Coactivation>("coactivation.json");
+  // Completion-feature co-activation is a different keyspace and must never be shown
+  // as compound prompt concepts. A dedicated prompt artifact can be added independently.
+  const promptCoactivation = useDataArtifact<Coactivation>("prompt_coactivation.json");
   const [wantExamples, setWantExamples] = useState(false);
   const reportBattles = useDataArtifact<ReportBattles>(wantExamples ? "report_battles.json" : null);
   const examplesAvailable = client.hasArtifact("report_battles.json");
@@ -159,7 +161,7 @@ function PromptRoute({
       canLoadExamples={!wantExamples && examplesAvailable}
       onLoadExamples={() => setWantExamples(true)}
       promptFeatures={promptFeatures ?? null}
-      coactivation={coactivation ?? null}
+      coactivation={promptCoactivation ?? null}
       hasLabels={bundle.meta.has_preference ?? true}
       focus={focus}
       onJumpFeature={onJumpFeature}
