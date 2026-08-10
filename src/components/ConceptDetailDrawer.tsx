@@ -4,6 +4,7 @@ import type { ConceptCoactivation, ElicitationData, Example, Feature } from "../
 import { pct, useDataArtifact, useFeatureExamples } from "../data";
 import { Card, ConceptLabel, VerifiedBadge, clip, conceptLabel } from "./ui";
 import JointEvidence from "./JointEvidence";
+import CoactivationPairEvidence from "./CoactivationPairEvidence";
 
 export default function ConceptDetailDrawer({
   featureId,
@@ -47,9 +48,6 @@ export default function ConceptDetailDrawer({
     (elicitation?.prompt_concepts ?? []).map((row) => [row.id, row.concept]),
   ), [elicitation]);
   const selectedPair = pairs.find((pair) => `${pair.a}-${pair.b}` === activePair) ?? null;
-  const pairExamples = selectedPair?.rows
-    .map((row) => coactivation?.examples?.[String(row)])
-    .filter((row): row is NonNullable<typeof row> => Boolean(row)) ?? [];
 
   const ownExamples = useMemo(() => (examples ?? []).map((row: Example) => {
     const paired = Boolean(row.completion_b);
@@ -124,15 +122,11 @@ export default function ConceptDetailDrawer({
                   <button type="button" onClick={() => onSelectFeature(other)} className="min-w-0 flex-1 truncate text-left text-sm text-slate-300 hover:underline">{conceptLabel(other, otherName)}</button>
                   <span className="font-mono text-xs text-accent-soft">{pair.lift.toFixed(1)}×</span>
                   <span className="w-20 text-right text-xs text-slate-500">n={pair.count.toLocaleString()}</span>
-                  {pair.rows.length > 0 && <button type="button" onClick={() => setActivePair(activePair === key ? null : key)} className="rounded border border-edge px-2 py-1 text-xs text-slate-400 hover:bg-edge/40">Example</button>}
+                  {pair.rows.length > 0 && <button type="button" onClick={() => setActivePair(activePair === key ? null : key)} aria-expanded={activePair === key} className="rounded border border-edge px-2 py-1 text-xs text-slate-400 hover:bg-edge/40">{activePair === key ? "Hide evidence" : "Evidence"}</button>}
                 </div>;
               })}</div>}
-            {selectedPair && <div className="mt-3 rounded-xl border border-accent/20 bg-accent/5 p-3">
-              {pairExamples.length === 0 ? <p className="text-sm text-slate-500">No transcript was included for this retained pair.</p>
-                : pairExamples.slice(0, 2).map((example, index) => <div key={index} className="mb-3 last:mb-0">
-                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Prompt</div><p className="text-sm text-slate-300">{example.prompt}</p>
-                  <div className="mt-2 text-[10px] uppercase tracking-wide text-slate-500">Response</div><p className="text-sm text-slate-300">{example.response}</p>
-                </div>)}
+            {selectedPair && coactivation && <div className="mt-3">
+              <CoactivationPairEvidence pair={selectedPair} coactivation={coactivation} />
             </div>}
           </Card>
 

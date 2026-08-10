@@ -160,6 +160,7 @@ export default function FeatureAtlasView({
   coactivation,
   kind = "response",
   onOpenFeature,
+  onInspectFeature,
   onOpenCoactivation,
 }: {
   map: FeatureMapData | null;
@@ -167,6 +168,7 @@ export default function FeatureAtlasView({
   coactivation: ConceptCoactivation | null | undefined;
   kind?: "response" | "prompt";
   onOpenFeature?: (featureId: number) => void;
+  onInspectFeature?: (featureId: number) => void;
   onOpenCoactivation?: (featureId: number) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -268,6 +270,10 @@ export default function FeatureAtlasView({
       y: HEIGHT / 2 - point.py * current.k,
     }));
   };
+  const inspectAndCentre = (featureId: number) => {
+    selectAndCentre(featureId);
+    onInspectFeature?.(featureId);
+  };
   const reset = () => setTransform({ x: 0, y: 0, k: 1 });
   const zoomBy = (factor: number) => setTransform((current) => {
     const k = Math.max(0.75, Math.min(8, current.k * factor));
@@ -354,7 +360,7 @@ export default function FeatureAtlasView({
               {listed.length === 0 ? <p className="py-6 text-center text-xs text-slate-500">No matching feature.</p> : listed.map((point) => {
                 const feature = byId.get(point.feature_id);
                 return (
-                  <button key={point.feature_id} type="button" onClick={() => selectAndCentre(point.feature_id)}
+                  <button key={point.feature_id} type="button" onClick={() => inspectAndCentre(point.feature_id)}
                     className={`flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition ${selectedId === point.feature_id ? "bg-accent/15 ring-1 ring-inset ring-accent/35" : "hover:bg-edge/40"}`}>
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: colorOf(point) }} />
                     <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{conceptLabel(point.feature_id, feature?.concept)}</span>
@@ -429,8 +435,8 @@ export default function FeatureAtlasView({
                         tabIndex={point.feature_id === selectedId ? 0 : -1}
                         onMouseEnter={() => setHoveredId(point.feature_id)}
                         onMouseLeave={() => setHoveredId(null)}
-                        onClick={(event) => { event.stopPropagation(); setSelectedId(point.feature_id); }}
-                        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(point.feature_id); } }}>
+                        onClick={(event) => { event.stopPropagation(); inspectAndCentre(point.feature_id); }}
+                        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspectAndCentre(point.feature_id); } }}>
                         <title>{conceptLabel(point.feature_id, byId.get(point.feature_id)?.concept)} · feature {point.feature_id}</title>
                       </circle>
                     );

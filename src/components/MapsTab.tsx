@@ -16,6 +16,8 @@ import MapView from "./MapView";
 import ResponseMapView from "./ResponseMapView";
 import PromptMapView from "./PromptMapView";
 import ClusterExplorer from "./ClusterExplorer";
+import ConceptDetailDrawer from "./ConceptDetailDrawer";
+import PromptConceptDetailDrawer from "./PromptConceptDetailDrawer";
 
 type Sub = "features" | "featureClusters" | "promptFeatures" | "promptClusters" | "responses" | "battle" | "prompt";
 const SUBS: { id: Sub; label: string; artifact: string }[] = [
@@ -51,6 +53,8 @@ export default function MapsTab({
     [client],
   );
   const [sub, setSub] = useState<Sub>(available[0]?.id ?? "features");
+  const [detailFeature, setDetailFeature] = useState<number | null>(null);
+  const [detailPrompt, setDetailPrompt] = useState<number | null>(null);
   const visited = useRef<Set<Sub>>(new Set([sub]));
 
   useEffect(() => {
@@ -61,7 +65,7 @@ export default function MapsTab({
   if (available.length === 0)
     return <Card><p className="text-sm text-slate-400">No map artifact is available for this dataset.</p></Card>;
 
-  return (
+  return <>
     <div className="flex flex-col gap-4">
       {available.length > 1 && (
         <div className="max-w-full overflow-x-auto pb-1">
@@ -73,22 +77,23 @@ export default function MapsTab({
       {visited.current.has("features") && available.some((item) => item.id === "features") && (
         <div hidden={sub !== "features"}>
           <FeatureAtlasPane features={features} onOpenFeature={onOpenFeature}
-            onOpenCoactivation={onOpenCoactivation} />
+            onInspectFeature={setDetailFeature} onOpenCoactivation={onOpenCoactivation} />
         </div>
       )}
       {visited.current.has("promptFeatures") && available.some((item) => item.id === "promptFeatures") && (
         <div hidden={sub !== "promptFeatures"}>
-          <PromptFeatureAtlasPane onOpenPrompt={onOpenPrompt} />
+          <PromptFeatureAtlasPane onOpenPrompt={onOpenPrompt} onInspectPrompt={setDetailPrompt} />
         </div>
       )}
       {visited.current.has("featureClusters") && available.some((item) => item.id === "featureClusters") && (
         <div hidden={sub !== "featureClusters"}>
-          <ResponseClusterPane features={features} onOpenFeature={onOpenFeature} />
+          <ResponseClusterPane features={features} onOpenFeature={onOpenFeature}
+            onInspectFeature={setDetailFeature} />
         </div>
       )}
       {visited.current.has("promptClusters") && available.some((item) => item.id === "promptClusters") && (
         <div hidden={sub !== "promptClusters"}>
-          <PromptClusterPane onOpenPrompt={onOpenPrompt} />
+          <PromptClusterPane onOpenPrompt={onOpenPrompt} onInspectPrompt={setDetailPrompt} />
         </div>
       )}
       {visited.current.has("responses") && available.some((item) => item.id === "responses") && (
@@ -103,24 +108,48 @@ export default function MapsTab({
         </div>
       )}
     </div>
-  );
+    {detailFeature != null && (
+      <ConceptDetailDrawer
+        featureId={detailFeature}
+        features={features}
+        onClose={() => setDetailFeature(null)}
+        onSelectFeature={setDetailFeature}
+      />
+    )}
+    {detailPrompt != null && (
+      <PromptDetailDrawerLoader
+        featureId={detailPrompt}
+        onClose={() => setDetailPrompt(null)}
+        onSelectFeature={setDetailPrompt}
+      />
+    )}
+  </>;
 }
 
 function ResponseClusterPane({
   features,
   onOpenFeature,
+  onInspectFeature,
 }: {
   features: Feature[];
   onOpenFeature?: (featureId: number) => void;
+  onInspectFeature?: (featureId: number) => void;
 }) {
   const clusters = useDataArtifact<FeatureClusterBundle>("feature_clusters.json");
   const map = useMap<FeatureMapData>("feature_map.json");
   if (clusters === undefined || map === undefined) return <Loading what="response communities" />;
   if (!clusters) return <Card><p className="text-sm text-slate-400">No response feature communities were exported.</p></Card>;
-  return <ClusterExplorer clusters={clusters} features={features} map={map} kind="response" onOpenFeature={onOpenFeature} />;
+  return <ClusterExplorer clusters={clusters} features={features} map={map} kind="response"
+    onOpenFeature={onOpenFeature} onInspectFeature={onInspectFeature} />;
 }
 
-function PromptClusterPane({ onOpenPrompt }: { onOpenPrompt?: (featureId: number) => void }) {
+function PromptClusterPane({
+  onOpenPrompt,
+  onInspectPrompt,
+}: {
+  onOpenPrompt?: (featureId: number) => void;
+  onInspectPrompt?: (featureId: number) => void;
+}) {
   const clusters = useDataArtifact<FeatureClusterBundle>("prompt_feature_clusters.json");
   const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
   const map = useMap<FeatureMapData>("prompt_feature_map.json");
@@ -128,10 +157,17 @@ function PromptClusterPane({ onOpenPrompt }: { onOpenPrompt?: (featureId: number
     return <Loading what="prompt communities" />;
   if (!clusters) return <Card><p className="text-sm text-slate-400">No prompt feature communities were exported.</p></Card>;
   const features: Feature[] = (promptFeatures?.features ?? []).map((feature) => ({ ...feature }));
-  return <ClusterExplorer clusters={clusters} features={features} map={map} kind="prompt" onOpenFeature={onOpenPrompt} />;
+  return <ClusterExplorer clusters={clusters} features={features} map={map} kind="prompt"
+    onOpenFeature={onOpenPrompt} onInspectFeature={onInspectPrompt} />;
 }
 
-function PromptFeatureAtlasPane({ onOpenPrompt }: { onOpenPrompt?: (featureId: number) => void }) {
+function PromptFeatureAtlasPane({
+  onOpenPrompt,
+  onInspectPrompt,
+}: {
+  onOpenPrompt?: (featureId: number) => void;
+  onInspectPrompt?: (featureId: number) => void;
+}) {
   const map = useMap<FeatureMapData>("prompt_feature_map.json");
   const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
   const coactivation = useDataArtifact<ConceptCoactivation>("prompt_coactivation.json");
@@ -139,7 +175,24 @@ function PromptFeatureAtlasPane({ onOpenPrompt }: { onOpenPrompt?: (featureId: n
     return <Loading what="prompt feature atlas" />;
   const features: Feature[] = (promptFeatures?.features ?? []).map((feature) => ({ ...feature }));
   return <FeatureAtlasView kind="prompt" map={map} features={features}
-    coactivation={coactivation} onOpenFeature={onOpenPrompt} />;
+    coactivation={coactivation} onOpenFeature={onOpenPrompt}
+    onInspectFeature={onInspectPrompt} />;
+}
+
+function PromptDetailDrawerLoader({
+  featureId,
+  onClose,
+  onSelectFeature,
+}: {
+  featureId: number;
+  onClose: () => void;
+  onSelectFeature: (featureId: number) => void;
+}) {
+  const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
+  if (!promptFeatures) return null;
+  const features: Feature[] = promptFeatures.features.map((feature) => ({ ...feature }));
+  return <PromptConceptDetailDrawer featureId={featureId} features={features}
+    onClose={onClose} onSelectFeature={onSelectFeature} />;
 }
 
 function Loading({ what }: { what: string }) {
@@ -149,17 +202,20 @@ function Loading({ what }: { what: string }) {
 function FeatureAtlasPane({
   features,
   onOpenFeature,
+  onInspectFeature,
   onOpenCoactivation,
 }: {
   features: Feature[];
   onOpenFeature?: (featureId: number) => void;
+  onInspectFeature?: (featureId: number) => void;
   onOpenCoactivation?: (featureId: number) => void;
 }) {
   const map = useMap<FeatureMapData>("feature_map.json");
   const coactivation = useDataArtifact<ConceptCoactivation>("coactivation.json");
   if (map === undefined) return <Loading what="feature atlas" />;
   return <FeatureAtlasView map={map} features={features} coactivation={coactivation}
-    onOpenFeature={onOpenFeature} onOpenCoactivation={onOpenCoactivation} />;
+    onOpenFeature={onOpenFeature} onInspectFeature={onInspectFeature}
+    onOpenCoactivation={onOpenCoactivation} />;
 }
 
 function BattleMapPane() {

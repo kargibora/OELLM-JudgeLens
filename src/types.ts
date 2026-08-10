@@ -588,7 +588,9 @@ export interface CoactivationPair {
 
 export interface CoactivationExample {
   prompt: string;
-  response: string;
+  response?: string;
+  /** Sparse values for axes participating in retained pairs on this row. */
+  activations?: Record<string, number>;
 }
 
 export interface ConceptCoactivation {

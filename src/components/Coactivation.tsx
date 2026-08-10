@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CoactivationPair, ConceptCoactivation } from "../types";
 import { Card, ConceptLabel, Explain, Metric, Segmented, conceptLabel } from "./ui";
 import { VirtualList } from "./VirtualList";
+import CoactivationPairEvidence from "./CoactivationPairEvidence";
 
 type Scope = "all" | "selected";
 
@@ -98,48 +99,13 @@ export default function Coactivation({
         {openPair && coact.examples && (() => {
           const pair = pairs.find((p) => `${p.a}-${p.b}` === openPair);
           if (!pair) return null;
-          const rows = pair.rows
-            .map((r) => coact.examples?.[String(r)])
-            .filter((x): x is NonNullable<typeof x> => Boolean(x));
           return (
-            <div className="mb-4 rounded-xl border border-accent/25 bg-accent/5 p-3">
-              <div className="mb-2 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Responses where both fire
-                  </div>
-                  <div className="mt-1 text-sm text-slate-200">
-                    <span className="line-clamp-2">
-                      {pair.a_concept || `feature ${pair.a}`} <span className="text-slate-500">+</span>{" "}
-                      {pair.b_concept || `feature ${pair.b}`}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-slate-500">
-                      {pair.lift.toFixed(1)}x lift · {pair.count.toLocaleString()} responses ·{" "}
-                      {rows.length} shown
-                    </span>
-                  </div>
-                </div>
-                <button type="button" onClick={() => setOpenPair(null)}
-                  className="shrink-0 rounded border border-edge/70 px-2 py-1 text-xs text-slate-400 hover:bg-edge/40">
-                  Close
-                </button>
-              </div>
-              {rows.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  Example text is unavailable; re-export with <code>--corpus</code>.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {rows.map((ex, i) => (
-                    <div key={i} className="rounded-lg border border-edge/60 bg-ink/40 p-3">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Prompt</p>
-                      <p className="mb-2 text-sm text-slate-300">{ex.prompt}</p>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Response</p>
-                      <p className="text-sm text-slate-300">{ex.response}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="relative mb-4">
+              <button type="button" onClick={() => setOpenPair(null)}
+                className="absolute right-3 top-3 z-10 shrink-0 rounded border border-edge/70 bg-ink/80 px-2 py-1 text-xs text-slate-400 hover:bg-edge/60">
+                Close
+              </button>
+              <CoactivationPairEvidence pair={pair} coactivation={coact} limit={6} />
             </div>
           );
         })()}

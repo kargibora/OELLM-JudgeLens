@@ -27,7 +27,9 @@ The repository works both as a standalone Vite application and as the
 - **Feature atlas** — every response and prompt SAE decoder axis in searchable UMAPs,
   with fidelity filters, corpus examples, and dataset co-activation links. Statistical
   co-firing communities can be browsed without collapsing their individual member axes;
-  every member opens its own interpretation and strongest examples. Separate sampled
+  clicking an atlas point opens a shared evidence drawer with its interpretation,
+  strongest activators, prompt links, and co-activation neighbors. Pair drill-ins show
+  transcripts where both sparse axes fire, including both activation magnitudes. Separate sampled
   response, battle, and prompt scatters remain available when exported.
 - **Concept details** — distribution rows open an in-context evidence drawer with the
   exact feature, fidelity, strongest responses, co-activation examples, prompt links,

@@ -72,12 +72,14 @@ export default function ClusterExplorer({
   map,
   kind,
   onOpenFeature,
+  onInspectFeature,
 }: {
   clusters: FeatureClusterBundle;
   features: Feature[];
   map: FeatureMapData | null;
   kind: "response" | "prompt";
   onOpenFeature?: (featureId: number) => void;
+  onInspectFeature?: (featureId: number) => void;
 }) {
   const [clusterQuery, setClusterQuery] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
@@ -169,6 +171,7 @@ export default function ClusterExplorer({
     setSelectedClusterId(clusterId);
     setSelectedFeatureId(featureId);
     setMemberQuery("");
+    onInspectFeature?.(featureId);
   };
 
   const stability = diagnosticNumber(clusters.diagnostics, "seed_ari_mean");
