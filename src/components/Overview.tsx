@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, Bot, MessageSquareText } from "lucide-react";
+import { Activity, ArrowRight, BarChart3, Bot, ShieldCheck, Workflow } from "lucide-react";
 import type { Bundle, Feature } from "../types";
 import { Card, Caveat, Explain, Metric, VerifiedBadge } from "./ui";
 import { fmt } from "../data";
@@ -15,7 +15,7 @@ export default function Overview({
   onJumpFeature,
 }: {
   bundle: Bundle;
-  onNavigate?: (view: "prompts" | "behaviors" | "models") => void;
+  onNavigate?: (view: "distribution" | "behaviors" | "relationships" | "models" | "reliability") => void;
   onJumpFeature?: (cf: number) => void;
 }) {
   const m = bundle.meta;
@@ -23,10 +23,9 @@ export default function Overview({
   const single = m.dataset_mode === "single";
   const files = new Set(bundle.manifest?.files ?? []);
   const legacy = bundle.manifest == null;
-  const hasPromptView = legacy || ["prompt_features.json", "elicitation.json", "prompt_map.json"]
-    .some((name) => files.has(name));
   const hasModelView = legacy || ["diagnosis.json", "model_compare.json", "head_to_head.json"]
     .some((name) => files.has(name));
+  const hasRelationships = legacy || files.has("elicitation.json");
   // honest fit reporting: r2/is_loo are authoritative; loo_r2 alone (older bundles)
   // implies LOO. NEVER label an in-sample fit "held-out".
   const r2 = m.r2 ?? m.loo_r2;
@@ -35,10 +34,10 @@ export default function Overview({
   const isDiff = m.input_rep === "difference";
   const lensKind = isDiff ? "difference" : "completion";
   const howBuilt = isDiff
-    ? "we embed each response and learn a small set of interpretable “axes of difference” between the two answers (chosen − rejected) with a sparse autoencoder"
+    ? "we embed each answer and learn a small set of concepts that differ between the chosen and rejected answers"
     : single
-      ? "we embed each response and learn a sparse set of candidate response concepts with a sparse autoencoder"
-      : "we embed each response and learn a sparse set of candidate response concepts, then compare prompt-matched answers through their feature codes";
+      ? "we embed each answer and learn a set of candidate answer concepts"
+      : "we embed each answer, learn candidate answer concepts, and compare answers to the same prompt";
 
   const trustworthy = bundle.features.filter((f) => f.fidelity_pass && sig(f));
   const pool = trustworthy.length ? trustworthy : bundle.features.filter(sig);
@@ -47,19 +46,25 @@ export default function Overview({
   const penalized = [...pool].filter((f) => eff(f) < 0).sort((a, b) => eff(a) - eff(b)).slice(0, 3);
   const namedDenom = m.n_named ?? bundle.features.length;
   const startCards = [
-    ...(hasPromptView ? [{
-      view: "prompts" as const,
-      icon: MessageSquareText,
-      title: "Start with a prompt",
+    ...((legacy || files.has("concept_distribution.json") || files.has("prompt_concept_distribution.json")) ? [{
+      view: "distribution" as const,
+      icon: BarChart3,
+      title: "Understand the dataset",
+      body: "Which requests and answer concepts are common, rare, or language-specific?",
+    }] : []),
+    ...(hasRelationships ? [{
+      view: "relationships" as const,
+      icon: Workflow,
+      title: "Trace prompt → answer",
       body: hasLabels
-        ? "Which response concepts do these requests elicit, and what tends to win?"
-        : "Which response concepts tend to appear for these requests?",
+        ? "What answers appear for each request type, and what wins within that context?"
+        : "What answer concepts appear for each request type, with matched evidence?",
     }] : []),
     {
       view: "behaviors" as const,
       icon: Activity,
-      title: "Start with a response concept",
-      body: "Where does it appear, which prompts elicit it, and how faithful is its label?",
+      title: "Inspect an answer concept",
+      body: "Where does it appear, what elicits it, and how well does the label fit?",
     },
     ...(hasModelView ? [{
       view: "models" as const,
@@ -67,6 +72,12 @@ export default function Overview({
       title: "Start with a model",
       body: "Which response tendencies distinguish it, and where is it strong or weak?",
     }] : []),
+    {
+      view: "reliability" as const,
+      icon: ShieldCheck,
+      title: "Check the data",
+      body: "Find missing labels, repeated names, low coverage, and other warnings.",
+    },
   ];
 
   // each driver row jumps to its feature in the Feature panel — the best entry point
@@ -98,13 +109,13 @@ export default function Overview({
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
             {single
-              ? "See what this response dataset contains—and the evidence behind each concept."
+              ? "See what this instruction dataset asks for—and what its answers contain."
               : "Find what models do, when they do it, and how reliably we know."}
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
             {single
-              ? "Explore response concepts, their prevalence and co-activation, prompt context, held-out verification, and concrete activation examples."
-              : "Start from a user request, response concept, or model. Every route leads back to activation examples, verification, support, and preference associations."}
+              ? "See what the prompts ask for, what the answers contain, and concrete examples in each language."
+              : "Start from a prompt, answer concept, or model. Then check examples and the evidence behind each result."}
           </p>
         </div>
         <div className={`mt-6 grid gap-3 ${startCards.length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
@@ -141,10 +152,10 @@ export default function Overview({
       </div>
 
       <Explain>
-        <b>What this is.</b> {howBuilt}. <b>Reconstruction</b> = how much of the embeddings the
-        features capture. <b>Verified features</b> = labels an LLM verifier reproduced on
+        <b>How this works.</b> {howBuilt}. <b>Reconstruction</b> shows how much information the
+        learned features keep. <b>Verified features</b> are names that an LLM checker reproduced on
         held-out examples (of the {namedDenom} named).{hasLabels && (
-          <> <b>Predicts win rate</b> = how well those axes predict each model’s real win rate
+          <> <b>Predicts win rate</b> shows how well those concepts predict each model’s real win rate
           {isLoo
             ? ", with every model held out of its own prediction — higher means the diagnosis genuinely generalises."
             : " — an in-sample fit (no held-out predictions in this bundle), so treat it optimistically."}</>
@@ -191,10 +202,10 @@ export default function Overview({
             viewer shows concept structure only (what concepts exist and how prompts and responses
             relate).{" "}</>
           )}
-          Concepts are <b>LLM-assigned labels</b>; ✓ marks ones an LLM verifier reproduced on
+          Concept names are written by an LLM; “Label checked” marks names that an LLM checker reproduced on
           held-out {single ? "examples" : "pairs"}. {hasLabels && (verifiedBasis
-            ? "Showing verified, significant axes only. "
-            : "No verified axes yet — showing significant-but-unverified axes; treat the labels as provisional. ")}
+            ? "Showing checked, statistically clear concepts only. "
+            : "No checked concepts yet — treat these names as suggestions. ")}
           Association, not causation.
         </Caveat>
       </Card>

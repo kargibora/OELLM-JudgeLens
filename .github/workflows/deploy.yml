@@ -38,6 +38,7 @@ jobs:
             --dir /tmp
           tar -xzf "/tmp/$PREFSCOPE_DATA_ASSET" -C public/runs
       - run: npm ci
+      - run: npm run test:bundle
       - name: Build the viewer
         env:
           VITE_PREFSCOPE_DATA_URL: ./runs/completion_m2048/

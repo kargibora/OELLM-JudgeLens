@@ -19,9 +19,45 @@ from pathlib import Path
 from typing import Any
 
 
-OMIT = {
-    "examples_by_model.json", "examples.json", "examples/", "joint_examples/",
-    "prompt_examples/",
+SHARDED = {"examples/", "joint_examples/", "prompt_examples/"}
+
+PROFILES: dict[str, dict[str, Any]] = {
+    # Public keeps the aggregate analysis and enough stratified evidence to inspect
+    # every exported language/source without publishing the complete transcript bank.
+    "public": {
+        "feature_examples": 3,
+        "feature_examples_per_group": 1,
+        "feature_examples_per_mode": 1,
+        "joint_examples": 1,
+        "joint_examples_per_group": 1,
+        "coactivation_examples": 1,
+        "coactivation_examples_per_group": 1,
+        "omit": {"examples_by_model.json", "examples.json"},
+    },
+    # Collaborator is still compact and redacted, but retains enough evidence to compare
+    # languages and inspect random/boundary examples alongside the strongest activators.
+    "collaborator": {
+        "feature_examples": 8,
+        "feature_examples_per_group": 2,
+        "feature_examples_per_mode": 3,
+        "joint_examples": 3,
+        "joint_examples_per_group": 1,
+        "coactivation_examples": 3,
+        "coactivation_examples_per_group": 1,
+        "omit": {"examples.json"},
+    },
+    # Full is a deployment copy of every exported artifact. Text is still redacted: the
+    # profile name describes evidence coverage, not a promise that raw secrets are safe.
+    "full": {
+        "feature_examples": None,
+        "feature_examples_per_group": 0,
+        "feature_examples_per_mode": 0,
+        "joint_examples": None,
+        "joint_examples_per_group": 0,
+        "coactivation_examples": None,
+        "coactivation_examples_per_group": 0,
+        "omit": set(),
+    },
 }
 
 REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -87,18 +123,64 @@ def _copy_json(source: Path, output: Path, counts: dict[str, int]) -> None:
     _write(output, _sanitize(_read(source), counts))
 
 
+def _balanced_indices(
+    rows: list[dict[str, Any]],
+    first: int | None,
+    per_group: int = 0,
+    per_mode: int = 0,
+) -> list[int]:
+    """Select ranked rows plus coverage across exported group and evidence-mode fields."""
+    if first is None:
+        return list(range(len(rows)))
+    selected = list(range(min(max(first, 0), len(rows))))
+    seen = set(selected)
+
+    def add_by(field: str, limit: int) -> None:
+        if limit <= 0:
+            return
+        values = sorted({str(row.get(field, "")).strip() for row in rows}
+                        - {"", "None", "nan"})
+        for value in values:
+            added = 0
+            for index, row in enumerate(rows):
+                if index in seen or str(row.get(field, "")).strip() != value:
+                    continue
+                selected.append(index)
+                seen.add(index)
+                added += 1
+                if added >= limit:
+                    break
+
+    add_by("group", per_group)
+    add_by("selection_kind", per_mode)
+    return selected
+
+
+def _balanced_rows(
+    rows: list[dict[str, Any]],
+    first: int | None,
+    per_group: int = 0,
+    per_mode: int = 0,
+) -> list[dict[str, Any]]:
+    return [rows[index] for index in _balanced_indices(rows, first, per_group, per_mode)]
+
+
 def _copy_coactivation(
     source: Path,
     output: Path,
     counts: dict[str, int],
-    examples_per_pair: int,
+    examples_per_pair: int | None,
+    examples_per_group: int,
 ) -> dict[str, int]:
     """Keep only the ranked evidence rows the public pair list can display."""
     data = _read(source)
     examples = data.get("examples", {})
     kept_rows: set[str] = set()
     for pair in data.get("pairs", []):
-        rows = [int(row) for row in pair.get("rows", [])[:examples_per_pair]]
+        available = [int(row) for row in pair.get("rows", [])]
+        evidence = [examples.get(str(row), {}) for row in available]
+        indices = _balanced_indices(evidence, examples_per_pair, examples_per_group)
+        rows = [available[index] for index in indices]
         pair["rows"] = rows
         kept_rows.update(str(row) for row in rows)
     data["examples"] = {
@@ -136,10 +218,33 @@ def _joint_pairs(source: Path) -> set[tuple[int, int]]:
 def build(
     source: Path,
     output: Path,
-    feature_examples: int,
-    joint_examples: int,
-    coactivation_examples: int,
+    *,
+    profile: str = "public",
+    feature_examples: int | None = None,
+    feature_examples_per_group: int | None = None,
+    feature_examples_per_mode: int | None = None,
+    joint_examples: int | None = None,
+    joint_examples_per_group: int | None = None,
+    coactivation_examples: int | None = None,
+    coactivation_examples_per_group: int | None = None,
 ) -> dict[str, Any]:
+    if profile not in PROFILES:
+        raise ValueError(f"unknown deployment profile: {profile}")
+    defaults = PROFILES[profile]
+    feature_examples = defaults["feature_examples"] if feature_examples is None else feature_examples
+    feature_examples_per_group = (defaults["feature_examples_per_group"]
+                                  if feature_examples_per_group is None else feature_examples_per_group)
+    feature_examples_per_mode = (defaults["feature_examples_per_mode"]
+                                 if feature_examples_per_mode is None else feature_examples_per_mode)
+    joint_examples = defaults["joint_examples"] if joint_examples is None else joint_examples
+    joint_examples_per_group = (defaults["joint_examples_per_group"]
+                                if joint_examples_per_group is None else joint_examples_per_group)
+    coactivation_examples = (defaults["coactivation_examples"]
+                             if coactivation_examples is None else coactivation_examples)
+    coactivation_examples_per_group = (defaults["coactivation_examples_per_group"]
+                                       if coactivation_examples_per_group is None
+                                       else coactivation_examples_per_group)
+    omitted = defaults["omit"]
     manifest = _read(source / "bundle_manifest.json")
     if output.exists():
         shutil.rmtree(output)
@@ -149,7 +254,7 @@ def build(
     files: list[str] = []
     coactivation_stats = {"pairs": 0, "examples": 0}
     for name in manifest.get("files", []):
-        if name in OMIT or name.endswith("/"):
+        if name in SHARDED or name in omitted or name.endswith("/"):
             continue
         src = source / name
         if src.is_file():
@@ -157,7 +262,8 @@ def build(
             dst.parent.mkdir(parents=True, exist_ok=True)
             if name == "coactivation.json":
                 coactivation_stats = _copy_coactivation(
-                    src, dst, redactions, coactivation_examples
+                    src, dst, redactions, coactivation_examples,
+                    coactivation_examples_per_group,
                 )
             else:
                 _copy_json(src, dst, redactions)
@@ -177,8 +283,10 @@ def build(
         rows = _read(src)
         if not isinstance(rows, list) or not rows:
             continue
-        _write(examples_out / src.name, _sanitize(rows[:feature_examples], redactions))
-        examples_written += min(len(rows), feature_examples)
+        selected = _balanced_rows(rows, feature_examples, feature_examples_per_group,
+                                  feature_examples_per_mode)
+        _write(examples_out / src.name, _sanitize(selected, redactions))
+        examples_written += len(selected)
     if examples_written:
         files.append("examples/")
 
@@ -188,7 +296,8 @@ def build(
         rows = _read(src)
         if not isinstance(rows, list):
             continue
-        selected = rows[:feature_examples]
+        selected = _balanced_rows(rows, feature_examples, feature_examples_per_group,
+                                  feature_examples_per_mode)
         _write(prompt_examples_out / src.name, _sanitize(selected, redactions))
         prompt_examples_written += len(selected)
     if prompt_examples_out.is_dir():
@@ -206,7 +315,7 @@ def build(
             pair = (prompt_feature, int(response_feature))
             if pair not in allowed or not rows:
                 continue
-            selected = rows[:joint_examples]
+            selected = _balanced_rows(rows, joint_examples, joint_examples_per_group)
             kept[str(response_feature)] = _sanitize(selected, redactions)
             joint_pairs_written += 1
             joint_examples_written += len(selected)
@@ -223,14 +332,19 @@ def build(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "files": sorted(set(files)),
         "public_profile": {
+            "deployment_profile": profile,
             "feature_examples_per_feature": feature_examples,
+            "feature_examples_per_group": feature_examples_per_group,
+            "feature_examples_per_mode": feature_examples_per_mode,
             "prompt_examples": prompt_examples_written,
             "joint_examples_per_pair": joint_examples,
+            "joint_examples_per_group": joint_examples_per_group,
             "joint_pairs": joint_pairs_written,
             "joint_examples": joint_examples_written,
             "coactivation_examples_per_pair": coactivation_examples,
+            "coactivation_examples_per_group": coactivation_examples_per_group,
             "coactivation_examples": coactivation_stats["examples"],
-            "omitted": ["examples_by_model.json", "examples.json"],
+            "omitted": sorted(omitted),
             "redactions": redactions,
         },
     }
@@ -239,6 +353,7 @@ def build(
     return {
         "source": str(source),
         "output": str(output),
+        "profile": profile,
         "artifacts": len(compact_manifest["files"]),
         "feature_examples": examples_written,
         "joint_pairs": joint_pairs_written,
@@ -252,18 +367,32 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--feature-examples", type=int, default=3)
-    parser.add_argument("--joint-examples", type=int, default=1)
-    parser.add_argument("--coactivation-examples", type=int, default=1)
+    parser.add_argument("--profile", choices=sorted(PROFILES), default="public")
+    parser.add_argument("--feature-examples", type=int)
+    parser.add_argument("--feature-examples-per-group", type=int)
+    parser.add_argument("--feature-examples-per-mode", type=int)
+    parser.add_argument("--joint-examples", type=int)
+    parser.add_argument("--joint-examples-per-group", type=int)
+    parser.add_argument("--coactivation-examples", type=int)
+    parser.add_argument("--coactivation-examples-per-group", type=int)
     args = parser.parse_args()
-    if min(args.feature_examples, args.joint_examples, args.coactivation_examples) < 1:
-        parser.error("example limits must be positive")
+    for name, value in vars(args).items():
+        if name.endswith("examples") and value is not None and value < 1:
+            parser.error(f"--{name.replace('_', '-')} must be positive")
+        if (name.endswith("per_group") or name.endswith("per_mode")) \
+                and value is not None and value < 0:
+            parser.error(f"--{name.replace('_', '-')} must be non-negative")
     summary = build(
         args.source.resolve(),
         args.output.resolve(),
-        args.feature_examples,
-        args.joint_examples,
-        args.coactivation_examples,
+        profile=args.profile,
+        feature_examples=args.feature_examples,
+        feature_examples_per_group=args.feature_examples_per_group,
+        feature_examples_per_mode=args.feature_examples_per_mode,
+        joint_examples=args.joint_examples,
+        joint_examples_per_group=args.joint_examples_per_group,
+        coactivation_examples=args.coactivation_examples,
+        coactivation_examples_per_group=args.coactivation_examples_per_group,
     )
     print(json.dumps(summary, indent=2))
 

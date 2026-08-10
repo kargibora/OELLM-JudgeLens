@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CoactivationPair, ConceptCoactivation } from "../types";
 import { conceptLabel } from "./ui";
-import { ActivationMeter, EvidenceText, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
+import { ActivationMeter, EvidencePager, EvidenceText, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
+import { useAnalysisFilters } from "../analysisFilters";
 
 const activation = (
   example: NonNullable<ConceptCoactivation["examples"]>[string],
@@ -19,8 +20,8 @@ export default function CoactivationPairEvidence({
   kind?: "response" | "prompt";
   limit?: number;
 }) {
-  const [group, setGroup] = useState("");
-  useEffect(() => { setGroup(""); }, [pair.a, pair.b]);
+  const { filters, setGroup } = useAnalysisFilters();
+  const group = filters.group;
   const allExamples = pair.rows
     .map((row) => ({ row, example: coactivation.examples?.[String(row)] }))
     .filter((item): item is {
@@ -29,6 +30,10 @@ export default function CoactivationPairEvidence({
     } => Boolean(item.example));
   const groups = useMemo(() => [...new Set(allExamples.map(({ example }) => example.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
   const examples = allExamples.filter(({ example }) => !group || example.group === group).slice(0, limit);
+  const [exampleIndex, setExampleIndex] = useState(0);
+  useEffect(() => { setExampleIndex(0); }, [pair.a, pair.b, group]);
+  const active = examples[exampleIndex] ?? examples[0];
+  const shown = active ? [active] : [];
   const aName = conceptLabel(pair.a, pair.a_concept);
   const bName = conceptLabel(pair.b, pair.b_concept);
   const hasActivationValues = examples.some(({ example }) =>
@@ -44,33 +49,36 @@ export default function CoactivationPairEvidence({
   return (
     <div className="rounded-xl border border-accent/25 bg-accent/5 p-3">
       <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {kind === "prompt" ? "Prompts" : "Responses"} where both axes activate
+        {kind === "prompt" ? "Prompts" : "Answers"} where both concepts appear
       </div>
       <div className="mt-1 text-sm font-medium text-slate-200">
         {aName} <span className="text-slate-500">+</span> {bName}
       </div>
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500">
-          {pair.lift.toFixed(1)}× lift · {pair.count.toLocaleString()} co-activations · {examples.length} examples shown
+          {pair.lift.toFixed(1)}× more common together · {pair.count.toLocaleString()} matches
         </p>
-        <ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} />
+          <EvidencePager index={Math.min(exampleIndex, Math.max(0, examples.length - 1))} count={examples.length} onChange={setExampleIndex} />
+        </div>
       </div>
 
       {examples.length === 0 ? (
         <p className="mt-3 text-sm text-slate-500">
-          No transcript was included for this retained pair. Re-export with a corpus to attach evidence.
+          No example was saved for this concept pair.
         </p>
       ) : (
-        <div className="mt-3 space-y-3">
-          {examples.map(({ row, example }) => {
+        <div className="mt-3">
+          {shown.map(({ row, example }) => {
             const aValue = activation(example, pair.a);
             const bValue = activation(example, pair.b);
             return (
-              <details key={row} className="group rounded-lg border border-edge/60 bg-ink/45 p-3" open={examples.length === 1}>
+              <details key={row} className="group rounded-lg border border-edge/60 bg-ink/45 p-3" open>
                 <summary className="cursor-pointer list-none">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {aValue != null && <ActivationMeter value={aValue} min={aDomain.min} max={aDomain.max} label={`Axis #${pair.a}`} compact />}
-                    {bValue != null && <ActivationMeter value={bValue} min={bDomain.min} max={bDomain.max} label={`Axis #${pair.b}`} compact />}
+                    {aValue != null && <ActivationMeter value={aValue} min={aDomain.min} max={aDomain.max} label={`Concept #${pair.a}`} compact />}
+                    {bValue != null && <ActivationMeter value={bValue} min={bDomain.min} max={bDomain.max} label={`Concept #${pair.b}`} compact />}
                   </div>
                   <div className="mt-3 group-open:hidden"><EvidenceText kind="prompt" preview>{example.prompt}</EvidenceText></div>
                   <span className="mt-1 block text-right text-[9px] text-slate-600">row {row}</span>
@@ -86,9 +94,9 @@ export default function CoactivationPairEvidence({
       )}
       <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
         {hasActivationValues
-          ? "Both displayed sparse activations are positive. Examples are ranked by the weaker mean-normalized activation."
-          : "These rows were selected because both sparse activations were positive; this older bundle does not include their magnitudes."}
-        {" "}Co-activation is descriptive and does not prove that either interpretation is correct or causal.
+          ? "Both concept scores are positive. The strongest balanced matches are shown first."
+          : "These examples were selected because both concept scores were positive; this older dataset does not include the scores."}
+        {" "}Appearing together does not prove that either concept name is correct or that one causes the other.
       </p>
     </div>
   );

@@ -5,7 +5,8 @@ import { Card, conceptLabel } from "./ui";
 import JointEvidence from "./JointEvidence";
 import CoactivationPairEvidence from "./CoactivationPairEvidence";
 import FeatureDetailDrawerShell from "./FeatureDetailDrawerShell";
-import { ActivationEvidenceCard, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
+import { ActivationEvidenceCard, EvidenceModeSelect, EvidencePager, ExampleGroupSelect, activationDomain, evidenceMode, evidenceModes, type EvidenceMode } from "./ActivationEvidence";
+import { answerTypeOf, useAnalysisFilters } from "../analysisFilters";
 
 export default function ConceptDetailDrawer({
   featureId,
@@ -27,14 +28,22 @@ export default function ConceptDetailDrawer({
   const distribution = useDataArtifact<ConceptDistribution>("concept_distribution.json");
   const [activePair, setActivePair] = useState<string | null>(null);
   const [activePrompt, setActivePrompt] = useState<number | null>(null);
-  const [group, setGroup] = useState(initialGroup);
+  const { filters, setGroup } = useAnalysisFilters();
+  const group = initialGroup || filters.group;
+  const [mode, setMode] = useState<EvidenceMode>("strongest");
+  const [exampleIndex, setExampleIndex] = useState(0);
+  const featureById = useMemo(() => new Map(features.map((row) => [row.feature_id, row])), [features]);
 
-  useEffect(() => { setActivePair(null); setActivePrompt(null); setGroup(initialGroup); }, [featureId, initialGroup]);
+  useEffect(() => { setActivePair(null); setActivePrompt(null); setMode("strongest"); setExampleIndex(0); }, [featureId, initialGroup]);
+  useEffect(() => { setExampleIndex(0); }, [group, mode]);
 
   const pairs = useMemo(() => (coactivation?.pairs ?? [])
     .filter((pair) => pair.a === featureId || pair.b === featureId)
+    .filter((pair) => filters.answerType === "all"
+      || (answerTypeOf(featureById.get(pair.a)) === filters.answerType
+        && answerTypeOf(featureById.get(pair.b)) === filters.answerType))
     .sort((a, b) => b.lift - a.lift || b.count - a.count)
-    .slice(0, 10), [coactivation, featureId]);
+    .slice(0, 10), [coactivation, featureId, filters.answerType, featureById]);
   const promptEdges = useMemo(() => (elicitation?.edges ?? [])
     .filter((edge) => edge.cy === featureId && edge.l2 > 0)
     .sort((a, b) => Number(b.sig) - Number(a.sig) || b.lift - a.lift)
@@ -53,10 +62,17 @@ export default function ConceptDetailDrawer({
       response: paired ? (sideA ? row.completion_a : row.completion_b) : row.completion_a,
       group: row.group,
       groupColumn: row.group_column,
+      activationPercentile: row.activation_percentile,
+      activationReference: row.activation_reference,
+      selectionKind: row.selection_kind,
     };
   }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)), [examples]);
   const groups = useMemo(() => [...new Set(allExamples.map((row) => row.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
-  const ownExamples = useMemo(() => allExamples.filter((row) => !group || row.group === group).slice(0, 5), [allExamples, group]);
+  const modes = useMemo(() => evidenceModes(allExamples.map((row) => ({ selection_kind: row.selectionKind }))), [allExamples]);
+  const effectiveMode = modes.includes(mode) ? mode : modes[0] ?? "strongest";
+  const ownExamples = useMemo(() => allExamples.filter((row) =>
+    (!group || row.group === group) && evidenceMode(row.selectionKind) === effectiveMode,
+  ).slice(0, 5), [allExamples, group, effectiveMode]);
   const maxHint = distribution?.features.find((row) => row.feature_id === featureId)?.max_activation;
   const domain = useMemo(() => activationDomain(allExamples.map((row) => row.z), maxHint), [allExamples, maxHint]);
   const groupColumn = allExamples.find((row) => row.groupColumn)?.groupColumn ?? distribution?.group_column ?? "language";
@@ -67,35 +83,39 @@ export default function ConceptDetailDrawer({
       <Card className="overflow-hidden bg-gradient-to-br from-panel/90 to-ink/60">
         <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Interpretation</div>
         <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-slate-300">
-          {feature?.feature_summary || "LLM-assigned concept label. Inspect the activation evidence before treating it as a semantic claim."}
+          {feature?.feature_summary || "This name was suggested by an LLM. Check the examples before using it."}
         </p>
         <dl className="mt-5 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Prevalence</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.semantic_presence_rate ?? feature?.generality ?? feature?.fire_rate, 2)}</dd></div>
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Semantic family</dt><dd className="mt-1 text-sm text-slate-200">{feature?.semantic_family?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Behavior scope</dt><dd className="mt-1 text-sm text-slate-200">{feature?.behavior_category?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Fidelity agreement</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.agreement, 0)}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Answer share</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.semantic_presence_rate ?? feature?.generality ?? feature?.fire_rate, 2)}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Answer type</dt><dd className="mt-1 text-sm text-slate-200">{feature?.semantic_family?.replace(/_/g, " ") ?? "not classified"}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Scope</dt><dd className="mt-1 text-sm text-slate-200">{feature?.behavior_category?.replace(/_/g, " ") ?? "not classified"}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Label agreement</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.agreement, 0)}</dd></div>
         </dl>
       </Card>
 
           <Card>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <div><div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Activation evidence</div><h3 className="mt-1 text-base font-semibold text-slate-100">Strongest corpus examples</h3></div>
-              <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn ?? "language"} /><span className="text-xs text-slate-500">{ownExamples.length} shown</span></div>
+              <div><div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Examples</div><h3 className="mt-1 text-base font-semibold text-slate-100">Answers carrying this concept</h3></div>
+              <div className="flex flex-wrap items-center gap-3"><EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} /><ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn ?? "language")} column={groupColumn ?? "language"} /><EvidencePager index={Math.min(exampleIndex, Math.max(0, ownExamples.length - 1))} count={ownExamples.length} onChange={setExampleIndex} /></div>
             </div>
             {examples === undefined ? <p className="text-sm text-slate-500">Loading examples…</p>
               : missingGroupMetadata ? <p className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-200/80">This older example shard has no {groupColumn} metadata. Re-export the bundle to filter evidence by {groupColumn}.</p>
-              : ownExamples.length === 0 ? <p className="text-sm text-slate-500">No corpus example was exported for this axis.</p>
-                : <div className="space-y-2">{ownExamples.map((example, index) => (
-                  <ActivationEvidenceCard key={index} prompt={example.prompt} response={example.response}
-                    value={example.z} min={domain.min} max={domain.max} />
-                ))}</div>}
+              : ownExamples.length === 0 ? <p className="text-sm text-slate-500">No example was saved for this concept.</p>
+                : (() => {
+                  const example = ownExamples[exampleIndex] ?? ownExamples[0];
+                  return <ActivationEvidenceCard prompt={example.prompt} response={example.response}
+                    value={example.z} min={domain.min} max={domain.max}
+                    percentile={example.activationPercentile}
+                    threshold={example.activationReference === "positive_activation" ? feature?.semantic_threshold : null}
+                    selectionKind={example.selectionKind} />;
+                })()}
           </Card>
 
           <Card>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Response relationships</div>
-            <h3 className="mt-1 text-base font-semibold text-slate-100">Co-activation neighbors</h3>
-            <p className="mb-3 mt-1 text-xs leading-relaxed text-slate-500">Features observed on the same responses more often than independence predicts. Open evidence to inspect both activations.</p>
-            {pairs.length === 0 ? <p className="text-sm text-slate-500">No retained co-activation pair.</p>
+            <h3 className="mt-1 text-base font-semibold text-slate-100">Often appears with</h3>
+            <p className="mb-3 mt-1 text-xs leading-relaxed text-slate-500">Concepts found on the same answers more often than expected. Open an example to inspect both scores.</p>
+            {pairs.length === 0 ? <p className="text-sm text-slate-500">No saved concept pair.</p>
               : <div className="space-y-1">{pairs.map((pair) => {
                 const other = pair.a === featureId ? pair.b : pair.a;
                 const otherName = pair.a === featureId ? pair.b_concept : pair.a_concept;
@@ -115,7 +135,7 @@ export default function ConceptDetailDrawer({
           <Card>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prompt relationships</div>
             <h3 className="mt-1 text-base font-semibold text-slate-100">Activated by these prompts</h3>
-            <p className="mb-3 mt-1 text-xs text-slate-500">Prompt→response co-activation; significant edges are listed first.</p>
+            <p className="mb-3 mt-1 text-xs text-slate-500">Prompt concepts often found with this answer concept. The clearest links are listed first.</p>
             {promptEdges.length === 0 ? <p className="text-sm text-slate-500">No retained positive prompt linkage for this feature.</p>
               : <div className="space-y-1">{promptEdges.map((edge) => <button key={edge.px} type="button" onClick={() => setActivePrompt(edge.px)}
                 className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left ${activePrompt === edge.px ? "bg-accent/15" : "hover:bg-edge/35"}`}>

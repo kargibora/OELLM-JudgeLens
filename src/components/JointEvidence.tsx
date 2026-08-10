@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { useDataArtifact } from "../data";
 import type { JointExample, JointExampleShard } from "../types";
 import { Card, ConceptLabel, SkeletonList } from "./ui";
-import { ActivationMeter, EvidenceText, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
+import { ActivationMeter, EvidencePager, EvidenceText, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
+import { useAnalysisFilters } from "../analysisFilters";
 
 type EvidenceKind = "elicitation" | "preference";
 
@@ -27,10 +28,13 @@ export default function JointEvidence({
 }) {
   const shard = useDataArtifact<JointExampleShard>(`joint_examples/${promptFeature}.json`);
   const allExamples = shard?.examples[String(responseFeature)] ?? [];
-  const [group, setGroup] = useState("");
-  useEffect(() => { setGroup(""); }, [promptFeature, responseFeature]);
+  const { filters, setGroup } = useAnalysisFilters();
+  const group = filters.group;
   const groups = useMemo(() => [...new Set(allExamples.map((example) => example.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
   const examples = allExamples.filter((example) => !group || example.group === group);
+  const [exampleIndex, setExampleIndex] = useState(0);
+  useEffect(() => { setExampleIndex(0); }, [promptFeature, responseFeature, group]);
+  const activeExample = examples[exampleIndex] ?? examples[0];
   const promptDomain = activationDomain(allExamples.map((example) => example.prompt_activation));
   const responseDomain = activationDomain(allExamples.map((example) => example.response_activation));
   const groupColumn = allExamples.find((example) => example.group_column)?.group_column ?? "language";
@@ -54,7 +58,10 @@ export default function JointEvidence({
             {onOpenBehavior && <EvidenceLink onClick={onOpenBehavior}>Open behavior</EvidenceLink>}
           </div>
         )}
-        <ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} />
+          <EvidencePager index={Math.min(exampleIndex, Math.max(0, examples.length - 1))} count={examples.length} onChange={setExampleIndex} />
+        </div>
       </div>
 
       {shard === undefined ? (
@@ -66,21 +73,18 @@ export default function JointEvidence({
         </div>
       ) : examples.length === 0 ? (
         <p className="mt-3 rounded-xl border border-dashed border-edge bg-ink/30 p-3 text-xs text-slate-500">
-          No response in the exported sample had positive activation on both selected axes.
+          No saved answer had a positive score for both selected concepts.
         </p>
       ) : (
-        <div className="mt-3 grid gap-3 xl:grid-cols-2">
-          {examples.map((example, index) => (
-            <EvidenceCard key={`${example.side}-${index}`} example={example}
-              promptDomain={promptDomain} responseDomain={responseDomain} />
-          ))}
+        <div className="mt-3">
+          <EvidenceCard example={activeExample} promptDomain={promptDomain} responseDomain={responseDomain} />
         </div>
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-        Selected by balanced raw positive activation on both axes. This makes the relationship
-        inspectable, but {kind === "preference" ? "the displayed outcome does not by itself explain the estimated win-rate effect" : "co-activation is descriptive, not causal"}.
-        Semantic presence thresholds have not been applied to this evidence export.
+        Selected because both concepts have strong positive scores. This lets you inspect the link,
+        but {kind === "preference" ? "one example does not explain the full win-rate result" : "appearing together does not show that one caused the other"}.
+        Checked label cutoffs were not used for this saved evidence.
       </p>
     </Card>
   );

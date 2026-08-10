@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import type { ConceptCoactivation, ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
+import type { ConceptCoactivation, ConceptDistribution, ConditionalBundle, ConditionalData, ElicitationData, Feature, PromptFeatures, ReportBattles } from "../types";
 import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, Segmented, clip, divergeColor, WINRATE_REF } from "./ui";
-import { pct, usePromptExamples } from "../data";
+import { pct, useDataArtifact, usePromptExamples } from "../data";
 import JointEvidence from "./JointEvidence";
 import CoactivationPairEvidence from "./CoactivationPairEvidence";
-import { ActivationEvidenceCard, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
+import { ActivationEvidenceCard, EvidenceModeSelect, EvidencePager, ExampleGroupSelect, activationDomain, evidenceMode, evidenceModes, type EvidenceMode } from "./ActivationEvidence";
+import { answerTypeOf, useAnalysisFilters } from "../analysisFilters";
 
 // Prompt-first browser: pick a prompt concept and read, on one page, what responses it
 // tends to elicit (co-activation lift) and which of those actually help win it (the
 // length-controlled Δwin-rate within that prompt type), plus example prompts + outcomes.
 // Replaces the dense feature×prompt heatmap.
 
-type PC = { id: number; name: string | null; n: number | null; maxAbsDelta: number };
+type PC = { id: number; name: string | null; n: number | null; rate: number | null; maxAbsDelta: number };
 
 export default function PromptBrowser({
   conditional,
@@ -21,6 +22,7 @@ export default function PromptBrowser({
   canLoadExamples = false,
   onLoadExamples,
   promptFeatures,
+  responseFeatures,
   coactivation,
   hasLabels = true,
   focus,
@@ -33,6 +35,7 @@ export default function PromptBrowser({
   canLoadExamples?: boolean;
   onLoadExamples?: () => void;
   promptFeatures: PromptFeatures | null;
+  responseFeatures: Feature[];
   coactivation: ConceptCoactivation | null;
   hasLabels?: boolean;
   focus?: { pc: number } | null;
@@ -53,6 +56,14 @@ export default function PromptBrowser({
   const [sortBy, setSortBy] = useState<"n" | "effect">(hasLabels ? "effect" : "n");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
+  const { filters } = useAnalysisFilters();
+  const promptDistribution = useDataArtifact<ConceptDistribution>("prompt_concept_distribution.json");
+  const promptRates = useMemo(() => new Map(
+    (promptDistribution?.features ?? []).map((feature) => [
+      feature.feature_id,
+      filters.group ? feature.group_fire_rate?.[filters.group] ?? 0 : feature.fire_rate,
+    ]),
+  ), [promptDistribution, filters.group]);
 
   // prompt-concept list, with battle count n and the strongest within-type Δwin (effect)
   const concepts = useMemo<PC[]>(() => {
@@ -83,19 +94,23 @@ export default function PromptBrowser({
       id: p.id,
       name: p.name,
       n: nBy.get(p.id) ?? null,
+      rate: promptRates.get(p.id) ?? null,
       maxAbsDelta: effBy.get(p.id) ?? 0,
     }));
-  }, [clustered, cond, elicitation, promptFeatures]);
+  }, [clustered, cond, elicitation, promptFeatures, promptRates]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return concepts
       .filter((p) => !q || conceptLabel(p.id, p.name).toLowerCase().includes(q))
       .filter((p) => clustered || !verifiedOnly || pmeta.get(p.id)?.verified)
+      .filter((p) => !filters.group || clustered || (p.rate ?? 0) > 0)
       .sort((a, b) => (sortBy === "n"
-        ? (b.n ?? -1) - (a.n ?? -1)
+        ? filters.group && !clustered
+          ? (b.rate ?? -1) - (a.rate ?? -1)
+          : (b.n ?? -1) - (a.n ?? -1)
         : b.maxAbsDelta - a.maxAbsDelta || (b.n ?? -1) - (a.n ?? -1)));
-  }, [clustered, concepts, query, sortBy, verifiedOnly, pmeta]);
+  }, [clustered, concepts, query, sortBy, verifiedOnly, pmeta, filters.group]);
 
   // default / cross-tab focus selection
   const handledFocus = useRef<unknown>(null);
@@ -123,14 +138,17 @@ export default function PromptBrowser({
     <div className="flex flex-col gap-4">
       <Explain>
         {elicitation || cond ? <>
-          Browse by <b>prompt concept</b>: pick one on the left to see, for that kind of
-          prompt, which response concepts it tends to <b>elicit</b>{hasLabels && <> and which
-          of them are associated with <b>winning</b> within this prompt type</>}.
+          Pick a <b>prompt concept</b> on the left. You can then see matching prompts, related
+          prompt concepts, and the answer concepts that appear with it{hasLabels && <> or are linked to winning</>}.
         </> : <>
-          Browse the <b>prompt concepts</b> named by the prompt lens. This bundle does not
-          yet include prompt→response linkage, so it does not claim what each concept elicits.
+          Browse the <b>prompt concepts</b> found in this dataset. Prompt→answer links were not included.
         </>}
       </Explain>
+      {filters.group && (
+        <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200/80">
+          The prompt list and examples use {filters.groupColumn}={filters.group}. Prompt→answer and win results still use all languages.
+        </p>
+      )}
 
       {conditional?.clustered && (
         <div className="flex flex-wrap items-center gap-2">
@@ -173,7 +191,7 @@ export default function PromptBrowser({
             </label>
             {!clustered && <label className="flex items-start gap-2 rounded-lg bg-ink/35 p-2 text-[11px] leading-snug text-slate-400">
               <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="mt-0.5 accent-accent" />
-              <span><b className="font-medium text-slate-300">Verified labels only</b><br />Hide prompt labels that did not pass held-out verification.</span>
+              <span><b className="font-medium text-slate-300">Checked labels only</b><br />Hide prompt names that did not pass the label check.</span>
             </label>}
             <div className="flex items-center justify-between border-t border-edge/60 pt-2 text-[11px] text-slate-500">
               <span>{filtered.length.toLocaleString()} of {concepts.length.toLocaleString()} concepts</span>
@@ -198,15 +216,17 @@ export default function PromptBrowser({
                   }`}
                 >
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta?.verified ? "bg-good ring-2 ring-good/10" : "bg-slate-700"}`}
-                    title={meta?.verified ? "fidelity check passed" : "label not fidelity-verified"}
-                    aria-label={meta?.verified ? "fidelity check passed" : "label not fidelity-verified"} />
+                    title={meta?.verified ? "label check passed" : "label not checked"}
+                    aria-label={meta?.verified ? "label check passed" : "label not checked"} />
                   <span className="min-w-0 flex-1">
                     <ConceptLabel id={p.id} name={p.name} wrap />
                     {meta?.behavior && <span className="ml-1 text-[10px] text-slate-500">· {meta.behavior}</span>}
                   </span>
-                  {p.n != null && <span className="shrink-0 text-right text-xs tabular-nums text-slate-500">
-                    n={p.n.toLocaleString()}
-                  </span>}
+                  {filters.group && p.rate != null ? (
+                    <span className="shrink-0 text-right text-xs tabular-nums text-slate-500">{pct(p.rate, 1)}</span>
+                  ) : p.n != null ? (
+                    <span className="shrink-0 text-right text-xs tabular-nums text-slate-500">n={p.n.toLocaleString()}</span>
+                  ) : null}
                 </button>
               );
             })}
@@ -232,14 +252,14 @@ export default function PromptBrowser({
               <p className="mt-0.5 text-xs text-slate-500">
                 {elicitation || cond
                   ? `what this prompt tends to produce${hasLabels ? ", and what wins it" : ""}`
-                  : "interpreted prompt-lens axis"}
+                  : "prompt concept"}
               </p>
             </Card>
             {!clustered && <PromptExamplesPanel featureId={sel} />}
             {!clustered && <PromptCoactivationPanel coactivation={coactivation} pc={sel}
               onSelectPrompt={setSel} />}
-            {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} onJumpFeature={onJumpFeature} />}
-            {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
+            {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} features={responseFeatures} onJumpFeature={onJumpFeature} />}
+            {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} features={responseFeatures} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
             {/* report_battles keys concepts by their raw name (bare id string when unnamed),
                 NOT the "feature N" display label — match that, else examples never join. */}
             {!clustered && <ExamplesPanel reportBattles={reportBattles} conceptName={selName ?? String(sel)}
@@ -278,7 +298,7 @@ function PromptCoactivationPanel({
         evidence that one concept causes the other.
       </p>
       {pairs.length === 0 ? (
-        <p className="py-2 text-sm text-slate-500">No retained co-activation neighbor for this prompt concept.</p>
+        <p className="py-2 text-sm text-slate-500">No related prompt concept was found.</p>
       ) : (
         <div className="space-y-1">
           {pairs.map((pair) => {
@@ -321,10 +341,18 @@ function PromptCoactivationPanel({
 
 function PromptExamplesPanel({ featureId }: { featureId: number }) {
   const examples = usePromptExamples(featureId);
-  const [group, setGroup] = useState("");
-  useEffect(() => { setGroup(""); }, [featureId]);
+  const { filters, setGroup } = useAnalysisFilters();
+  const group = filters.group;
+  const [mode, setMode] = useState<EvidenceMode>("strongest");
+  const [exampleIndex, setExampleIndex] = useState(0);
+  useEffect(() => { setMode("strongest"); setExampleIndex(0); }, [featureId]);
+  useEffect(() => { setExampleIndex(0); }, [group, mode]);
   const groups = useMemo(() => [...new Set((examples ?? []).map((example) => example.group).filter((value): value is string => Boolean(value)))].sort(), [examples]);
-  const shown = useMemo(() => (examples ?? []).filter((example) => !group || example.group === group).slice(0, 8), [examples, group]);
+  const modes = useMemo(() => evidenceModes(examples ?? []), [examples]);
+  const effectiveMode = modes.includes(mode) ? mode : modes[0] ?? "strongest";
+  const shown = useMemo(() => (examples ?? []).filter((example) =>
+    (!group || example.group === group) && evidenceMode(example.selection_kind) === effectiveMode,
+  ).slice(0, 8), [examples, group, effectiveMode]);
   const domain = useMemo(() => activationDomain((examples ?? []).map((example) => example.z)), [examples]);
   const groupColumn = (examples ?? []).find((example) => example.group_column)?.group_column ?? "language";
   if (examples === undefined)
@@ -332,43 +360,48 @@ function PromptExamplesPanel({ featureId }: { featureId: number }) {
   return (
     <Card>
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h4 className="text-sm font-semibold text-slate-200">Top-activating prompts</h4>
-        <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /><span className="text-xs text-slate-500">{shown.length} shown</span></div>
+        <h4 className="text-sm font-semibold text-slate-200">Example prompts</h4>
+        <div className="flex flex-wrap items-center gap-3"><EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} /><ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} /><EvidencePager index={Math.min(exampleIndex, Math.max(0, shown.length - 1))} count={shown.length} onChange={setExampleIndex} /></div>
       </div>
       {examples === null ? (
         <p className="text-sm text-slate-500">Prompt examples were not included in this bundle.</p>
       ) : shown.length === 0 ? (
         <p className="text-sm text-slate-500">
-          {group ? `No retained ${groupColumn}=${group} prompt for this axis.`
-            : "This axis has no positive activation in the exported prompt corpus. No unrelated example is substituted."}
+          {group ? `No saved ${groupColumn}=${group} prompt for this concept.`
+            : "No matching prompt example was saved for this concept."}
         </p>
       ) : (
-        <div className="space-y-2">{shown.slice(0, 6).map((example, index) => (
-          <ActivationEvidenceCard key={index} prompt={example.prompt} value={example.z}
-            min={domain.min} max={domain.max} />
-        ))}</div>
+        <div>{(() => { const example = shown[exampleIndex] ?? shown[0]; return (
+          <ActivationEvidenceCard prompt={example.prompt} value={example.z}
+            min={domain.min} max={domain.max} percentile={example.activation_percentile}
+            selectionKind={example.selection_kind} />
+        ); })()}</div>
       )}
     </Card>
   );
 }
 
-function ElicitsPanel({ elicitation, pc, promptName, onJumpFeature }: {
+function ElicitsPanel({ elicitation, pc, promptName, features, onJumpFeature }: {
   elicitation: ElicitationData | null;
   pc: number;
   promptName: string | null;
+  features: Feature[];
   onJumpFeature?: (cf: number) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
+  const { filters } = useAnalysisFilters();
+  const featureById = useMemo(() => new Map(features.map((feature) => [feature.feature_id, feature])), [features]);
   const rows = useMemo(() => {
     if (!elicitation) return [];
     const nameOf = new Map(elicitation.response_concepts.map((c) => [c.id, c.concept]));
     const edges = elicitation.edges.filter((e) => e.px === pc && e.l2 > 0 && (showAll || e.sig))
+      .filter((edge) => filters.answerType === "all" || answerTypeOf(featureById.get(edge.cy)) === filters.answerType)
       .sort((a, b) => b.lift - a.lift).slice(0, 14);
     const maxL2 = Math.max(0.5, ...edges.map((e) => e.l2));
     return edges.map((e) => ({ id: e.cy, name: nameOf.get(e.cy) ?? null, lift: e.lift,
       pyx: e.pyx, l2: e.l2, sig: e.sig, nx: e.nx, nco: e.nco, w: e.l2 / maxL2 }));
-  }, [elicitation, pc, showAll]);
+  }, [elicitation, pc, showAll, filters.answerType, featureById]);
   useEffect(() => { setSelected(null); }, [pc]);
   useEffect(() => {
     if (selected == null || !rows.some((r) => r.id === selected))
@@ -378,10 +411,10 @@ function ElicitsPanel({ elicitation, pc, promptName, onJumpFeature }: {
   return (
     <div className="flex flex-col gap-3">
       <Card>
-      <h4 className="text-sm font-semibold text-slate-200">Elicits these behaviours</h4>
+      <h4 className="text-sm font-semibold text-slate-200">Answers often include</h4>
       <p className="mb-2 mt-0.5 text-[11px] text-slate-500">
-        Response concepts that co-activate with this prompt. Select one to inspect a
-        prompt–response example carrying both concepts.
+        Answer concepts that appear unusually often with this prompt concept. Select one
+        to see a prompt and answer where both appear.
       </p>
       {elicitation && elicitation.edges.some((e) => e.px === pc && e.l2 > 0 && !e.sig) && (
         <label className="mb-2 flex items-center gap-1.5 text-[11px] text-slate-500">
@@ -390,7 +423,7 @@ function ElicitsPanel({ elicitation, pc, promptName, onJumpFeature }: {
         </label>
       )}
       {rows.length === 0 ? (
-        <p className="px-1 py-3 text-sm text-slate-500">No elicited response concept in the bundle.</p>
+        <p className="px-1 py-3 text-sm text-slate-500">No linked answer concept was found.</p>
       ) : (
         rows.map((r) => (
           <ConceptBarRow key={r.id} id={r.id} name={r.name}
@@ -408,24 +441,28 @@ function ElicitsPanel({ elicitation, pc, promptName, onJumpFeature }: {
   );
 }
 
-function WinsPanel({ cond, pc, promptName, showEvidence, onJumpFeature }: {
+function WinsPanel({ cond, pc, promptName, features, showEvidence, onJumpFeature }: {
   cond: ConditionalData | null;
   pc: number;
   promptName: string | null;
+  features: Feature[];
   showEvidence: boolean;
   onJumpFeature?: (cf: number) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
+  const { filters } = useAnalysisFilters();
+  const featureById = useMemo(() => new Map(features.map((feature) => [feature.feature_id, feature])), [features]);
   const rows = useMemo(() => {
     if (!cond) return [];
     const nameOf = new Map(cond.features.map((f) => [f.id, f.concept]));
     const cells = cond.cells.filter((c) => c.pc === pc && (showAll || c.sig))
+      .filter((cell) => filters.answerType === "all" || answerTypeOf(featureById.get(cell.f)) === filters.answerType)
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 14);
     const maxD = Math.max(0.02, ...cells.map((c) => Math.abs(c.delta)));
     return cells.map((c) => ({ id: c.f, name: nameOf.get(c.f) ?? null, delta: c.delta, sig: c.sig,
       nf: c.nf ?? null, n: c.n ?? null, w: Math.abs(c.delta) / maxD }));
-  }, [cond, pc, showAll]);
+  }, [cond, pc, showAll, filters.answerType, featureById]);
   useEffect(() => { setSelected(null); }, [pc]);
   useEffect(() => {
     if (selected == null || !rows.some((r) => r.id === selected))

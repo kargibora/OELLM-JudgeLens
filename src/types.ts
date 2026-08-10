@@ -159,6 +159,9 @@ export interface Diagnosis {
 
 export interface Example {
   z: number;
+  activation_percentile?: number;
+  activation_reference?: "positive_activation" | "absolute_contrast" | string;
+  selection_kind?: "strongest" | "group_strongest" | "random_present" | "random_contrast" | "near_threshold" | "near_boundary" | string;
   prompt: string;
   model_a: string;
   model_b: string;
@@ -354,6 +357,9 @@ export interface FeatureClusterBundle {
 
 export interface PromptExample {
   z: number;
+  activation_percentile?: number;
+  activation_reference?: "positive_activation" | string;
+  selection_kind?: "strongest" | "group_strongest" | "random_present" | "near_threshold" | "near_boundary" | string;
   prompt: string;
   group?: string;
   group_column?: string;

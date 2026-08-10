@@ -120,7 +120,7 @@ export function ConceptLabel({
   );
 }
 
-// ✓ verified / unverified pill — drives the "is this label trustworthy?" signal.
+// Small label-check badge. Keep the wording plain because this appears throughout the app.
 // `n` (held-out examples) shown when present so n=14 doesn't masquerade as n=200.
 // Three states, not two: a label that FAILED its held-out check is materially worse
 // than one that was never tested — don't let both read "unverified".
@@ -128,8 +128,8 @@ export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number |
   if (pass === undefined || pass === null)
     return (
       <span className="inline-flex items-center gap-1 rounded-full border border-slate-700/50 bg-slate-800/25 px-2 py-1 text-[10px] font-medium text-slate-500"
-        title="this label has not been through the held-out fidelity check yet">
-        <CircleDashed size={11} />Not fidelity-tested
+        title="this name has not been checked on held-out examples">
+        <CircleDashed size={11} />Not checked
       </span>
     );
   const Icon = pass ? ShieldCheck : ShieldAlert;
@@ -138,9 +138,9 @@ export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number |
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium ${
         pass ? "border-good/20 bg-good/[0.07] text-good" : "border-amber-500/20 bg-amber-500/[0.07] text-amber-300"
       }`}
-      title={pass ? "an LLM verifier reproduced this label on held-out examples" : "an LLM verifier could not reproduce this label under the configured held-out checks"}
+      title={pass ? "an LLM checker reproduced this name on held-out examples" : "an LLM checker could not reliably reproduce this name on held-out examples"}
     >
-      <Icon size={11} />{pass ? "Fidelity passed" : "Fidelity failed"}
+      <Icon size={11} />{pass ? "Label checked" : "Label uncertain"}
       {n != null && <span className="ml-0.5 opacity-70">n={n}</span>}
     </span>
   );

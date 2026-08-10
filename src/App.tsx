@@ -1,6 +1,7 @@
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -21,6 +22,7 @@ import {
   RefreshCw,
   Share2,
   ShieldCheck,
+  Workflow,
   X,
 } from "lucide-react";
 import type {
@@ -50,6 +52,8 @@ import {
 } from "./data";
 import Overview from "./components/Overview";
 import { Card, Segmented, Skeleton, SkeletonList } from "./components/ui";
+import { AnalysisFilterContext, useAnalysisFilters, type AnalysisFilters, type AnswerTypeFilter } from "./analysisFilters";
+import AnalysisFilterBar from "./components/AnalysisFilterBar";
 
 // Keep the analytical surfaces out of the startup chunk. A report card pulls in
 // Recharts and >1k lines of UI; users browsing the overview should not pay for it.
@@ -63,10 +67,12 @@ const Validation = lazy(() => import("./components/Validation"));
 const MapsTab = lazy(() => import("./components/MapsTab"));
 const ConceptDistributionView = lazy(() => import("./components/ConceptDistribution"));
 const CoactivationView = lazy(() => import("./components/Coactivation"));
+const PromptAnswerExplorer = lazy(() => import("./components/PromptAnswerExplorer"));
+const DatasetHealth = lazy(() => import("./components/DatasetHealth"));
 const ConceptDetailDrawer = lazy(() => import("./components/ConceptDetailDrawer"));
 const PromptConceptDetailDrawer = lazy(() => import("./components/PromptConceptDetailDrawer"));
 
-export type ViewId = "discover" | "distribution" | "prompts" | "behaviors" | "coactivation" | "models" | "reliability" | "atlas";
+export type ViewId = "discover" | "distribution" | "prompts" | "behaviors" | "relationships" | "coactivation" | "models" | "reliability" | "atlas";
 
 export interface PrefScopeViewerProps {
   /** URL containing meta.json, features.json, and bundle_manifest.json. */
@@ -87,14 +93,15 @@ const VIEWS: {
   /** Bundle artifact this view needs; the tab is hidden when the bundle lacks it. */
   requires?: string;
 }[] = [
-  { id: "discover", label: "Discover", description: "What the lens found", icon: Compass },
-  { id: "distribution", label: "Concept distribution", description: "What prompts and responses contain", icon: BarChart3, requires: "concept_distribution.json|prompt_concept_distribution.json" },
-  { id: "prompts", label: "Prompt context", description: "When users ask X", icon: MessageSquareText, group: "Explore", requires: "prompt_features.json|elicitation.json|prompt_map.json" },
-  { id: "behaviors", label: "Response concepts", description: "Inspect what responses express", icon: Activity },
-  { id: "coactivation", label: "Co-activation", description: "Concepts that fire together", icon: Share2, requires: "coactivation.json" },
-  { id: "models", label: "Models", description: "How each model responds", icon: Bot, requires: "diagnosis.json" },
-  { id: "reliability", label: "Reliability", description: "Fidelity, bias, validation", icon: ShieldCheck, group: "Audit" },
-  { id: "atlas", label: "Feature atlas", description: "Explore SAE geometry and communities", icon: Map, requires: "feature_map.json|prompt_feature_map.json|feature_clusters.json|prompt_feature_clusters.json|map.json|response_map.json|prompt_map.json" },
+  { id: "discover", label: "Overview", description: "What this dataset supports", icon: Compass },
+  { id: "distribution", label: "Dataset contents", description: "Common prompt and answer concepts", icon: BarChart3, group: "Explore", requires: "concept_distribution.json|prompt_concept_distribution.json" },
+  { id: "prompts", label: "Prompt concepts", description: "Requests, topics, and constraints", icon: MessageSquareText, requires: "prompt_features.json|prompt_map.json" },
+  { id: "behaviors", label: "Answer concepts", description: "What responses express", icon: Activity },
+  { id: "relationships", label: "Prompt → answer", description: "How requests connect to responses", icon: Workflow, requires: "elicitation.json" },
+  { id: "coactivation", label: "Concept relationships", description: "Concepts that appear together", icon: Share2, requires: "coactivation.json" },
+  { id: "models", label: "Models & comparisons", description: "How response sets differ", icon: Bot, group: "Compare", requires: "diagnosis.json|model_compare.json|paired_comparison.json" },
+  { id: "reliability", label: "Data checks", description: "Coverage, labels, and possible problems", icon: ShieldCheck, group: "Check" },
+  { id: "atlas", label: "Concept map", description: "Browse related concepts", icon: Map, group: "Map", requires: "feature_map.json|prompt_feature_map.json|feature_clusters.json|prompt_feature_clusters.json|map.json|response_map.json|prompt_map.json" },
 ];
 
 const isView = (x: string): x is ViewId => VIEWS.some((v) => v.id === x);
@@ -163,6 +170,7 @@ function PromptRoute({
       canLoadExamples={!wantExamples && examplesAvailable}
       onLoadExamples={() => setWantExamples(true)}
       promptFeatures={promptFeatures ?? null}
+      responseFeatures={bundle.features}
       coactivation={promptCoactivation ?? null}
       hasLabels={bundle.meta.has_preference ?? true}
       focus={focus}
@@ -338,7 +346,7 @@ function OverlayBlocked({ onModels }: { onModels: () => void }) {
 
 function ReliabilityRoute({ bundle }: { bundle: Bundle }) {
   const client = useDataClient();
-  const [mode, setMode] = useState<"fidelity" | "bias" | "validation">("fidelity");
+  const [mode, setMode] = useState<"health" | "fidelity" | "bias" | "validation">("health");
   const bias = useDataArtifact<BiasRow[]>(mode === "bias" ? "bias_screen.json" : null);
   const validation = useDataArtifact<ModelValidation[]>(mode === "validation" ? "validation.json" : null);
   const named = bundle.features.filter((f) => f.concept && f.concept.trim() !== "");
@@ -352,13 +360,14 @@ function ReliabilityRoute({ bundle }: { bundle: Bundle }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-slate-100">Reliability and limits</h2>
-          <p className="mt-1 text-sm text-slate-400">Separate label fidelity, confounds, and predictive validation.</p>
+          <p className="mt-1 text-sm text-slate-400">Check concept names, length effects, and model-level predictions separately.</p>
         </div>
         <Segmented
           value={mode}
           onChange={setMode}
           options={[
-            { value: "fidelity" as const, label: "Feature fidelity" },
+            { value: "health" as const, label: "Dataset health" },
+            { value: "fidelity" as const, label: "Label checks" },
             // Both need preference labels; offering them on unlabelled data is a dead click.
             ...(client.hasArtifact("bias_screen.json")
               ? [{ value: "bias" as const, label: "Length confounds" }] : []),
@@ -368,6 +377,7 @@ function ReliabilityRoute({ bundle }: { bundle: Bundle }) {
         />
       </div>
 
+      {mode === "health" && <DatasetHealth bundle={bundle} />}
       {mode === "fidelity" && (
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
@@ -394,7 +404,7 @@ function ReliabilityRoute({ bundle }: { bundle: Bundle }) {
             <ul className="mt-2 space-y-2 text-xs leading-relaxed text-slate-400">
               <li>Feature names are hypotheses assigned by an LLM.</li>
               <li>Δwin is an association with this dataset’s preferences, not moral value.</li>
-              <li>Elicitation is coactivation, not causal intervention.</li>
+              <li>Concepts appearing together does not mean one caused the other.</li>
               <li>Use examples and per-prompt support before making a model claim.</li>
             </ul>
           </Card>
@@ -421,6 +431,7 @@ export default function App({
   const [view, setView] = useState<ViewId>(() => (syncUrl && hashView()) || initialView);
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
   const [overlay, setOverlay] = useState("");
+  const [analysisFilters, setAnalysisFilters] = useState<AnalysisFilters>({ group: "", groupColumn: "language", answerType: "all" });
   const [mobileNav, setMobileNav] = useState(false);
   const drawerRef = useRef<HTMLElement | null>(null);
   const navTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -438,6 +449,7 @@ export default function App({
 
   useEffect(() => {
     setOverlay("");
+    setAnalysisFilters({ group: "", groupColumn: "language", answerType: "all" });
     setFocusCell(null);
     let live = true;
     client.loadDatasets()
@@ -445,6 +457,29 @@ export default function App({
       .catch(() => { if (live) setDatasets([{ id: "default", label: "Dataset", overlay: "" }]); });
     return () => { live = false; };
   }, [client]);
+
+  const setAnalysisGroup = useCallback((group: string, column = "language") => {
+    setAnalysisFilters((current) => ({ ...current, group, groupColumn: column }));
+  }, []);
+  const setAnalysisAnswerType = useCallback((answerType: AnswerTypeFilter) => {
+    setAnalysisFilters((current) => ({ ...current, answerType }));
+  }, []);
+  const resetAnalysisFilters = useCallback(() => {
+    setAnalysisFilters((current) => current.group || current.answerType !== "all"
+      ? { ...current, group: "", answerType: "all" }
+      : current);
+  }, []);
+  const analysisFilterValue = useMemo(() => ({
+    filters: analysisFilters,
+    setGroup: setAnalysisGroup,
+    setAnswerType: setAnalysisAnswerType,
+    reset: resetAnalysisFilters,
+  }), [analysisFilters, setAnalysisGroup, setAnalysisAnswerType, resetAnalysisFilters]);
+  const changeDataset = useCallback((nextOverlay: string) => {
+    setOverlay(nextOverlay);
+    setAnalysisFilters({ group: "", groupColumn: "language", answerType: "all" });
+    setFocusCell(null);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -518,9 +553,10 @@ export default function App({
 
   return (
     <DataClientContext.Provider value={client}>
+    <AnalysisFilterContext.Provider value={analysisFilterValue}>
     <div className={`prefscope-viewer ${layout === "standalone" ? "min-h-screen" : "min-h-[640px]"} ${className}`}>
       <div className={`mx-auto grid max-w-[1680px] lg:grid-cols-[248px_minmax(0,1fr)] ${layout === "standalone" ? "min-h-screen" : "min-h-[640px]"}`}>
-        <aside className={`hidden border-r border-edge/70 bg-ink/70 px-4 py-6 lg:sticky lg:top-0 lg:block ${layout === "standalone" ? "lg:h-screen" : "lg:h-full"}`}>
+        <aside className={`hidden min-h-0 flex-col overflow-hidden border-r border-edge/70 bg-ink/70 px-4 py-6 lg:sticky lg:top-0 lg:flex ${layout === "standalone" ? "lg:h-screen" : "lg:max-h-screen"}`}>
           <Brand />
           <Navigation view={view} onNavigate={navigate} client={client} />
           <BundleStatus bundle={bundle} />
@@ -530,7 +566,7 @@ export default function App({
           <div className="fixed inset-0 z-50 lg:hidden">
             <button className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close navigation" onClick={() => setMobileNav(false)} />
             <aside ref={drawerRef} role="dialog" aria-modal="true" aria-label="Analysis navigation"
-              className="relative h-full w-[min(86vw,320px)] border-r border-edge bg-ink p-5 shadow-2xl">
+              className="relative flex h-full w-[min(86vw,320px)] min-h-0 flex-col border-r border-edge bg-ink p-5 shadow-2xl">
               <div className="mb-6 flex items-start justify-between">
                 <Brand />
                 <button ref={closeNavRef} className="icon-button grid" aria-label="Close navigation" onClick={() => setMobileNav(false)}><X size={18} /></button>
@@ -554,28 +590,10 @@ export default function App({
                 {active.description}
               </h1>
             </div>
-            {datasets.length > 1 && (
-              <label className="hidden min-w-0 flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 sm:flex">
-                Dataset
-                <select
-                  value={overlay}
-                  onChange={(e) => setOverlay(e.target.value)}
-                  className="max-w-[330px] rounded-xl border border-edge bg-panel px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-200"
-                >
-                  {datasets.map((d) => <option key={d.id} value={d.overlay}>{d.label}</option>)}
-                </select>
-              </label>
-            )}
           </header>
 
-          {datasets.length > 1 && (
-            <label className="mb-4 flex flex-col gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 sm:hidden">
-              Dataset
-              <select value={overlay} onChange={(e) => setOverlay(e.target.value)} className="rounded-xl border border-edge bg-panel px-3 py-2 text-sm font-normal normal-case text-slate-200">
-                {datasets.map((d) => <option key={d.id} value={d.overlay}>{d.label}</option>)}
-              </select>
-            </label>
-          )}
+          <AnalysisFilterBar datasets={datasets} overlay={overlay} onDatasetChange={changeDataset}
+            features={bundle?.features ?? []} />
 
           {bundleNote && (
             <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/90">
@@ -610,13 +628,17 @@ export default function App({
                 overlay ? <OverlayBlocked onModels={() => navigate("models")} />
                   : <BehaviorRoute bundle={bundle} focus={featureFocus} onJumpPrompt={jumpPrompt} />
               )}
+              {view === "relationships" && (
+                overlay ? <OverlayBlocked onModels={() => navigate("models")} />
+                  : <PromptAnswerExplorer features={bundle.features} hasLabels={bundle.meta.has_preference ?? true} />
+              )}
               {view === "distribution" && (
                 overlay ? <OverlayBlocked onModels={() => navigate("models")} />
                   : <DistributionRoute features={bundle.features} />
               )}
               {view === "coactivation" && (
                 overlay ? <OverlayBlocked onModels={() => navigate("models")} />
-                  : <CoactivationRoute focus={featureFocus?.cf ?? null} onJumpFeature={jumpFeature} />
+                  : <CoactivationRoute focus={featureFocus?.cf ?? null} features={bundle.features} onJumpFeature={jumpFeature} />
               )}
               {view === "models" && (
                 <ModelRoute bundle={bundle} overlay={overlay} onJumpFeature={jumpFeature} />
@@ -645,13 +667,14 @@ export default function App({
         </main>
       </div>
     </div>
+    </AnalysisFilterContext.Provider>
     </DataClientContext.Provider>
   );
 }
 
 function Brand() {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex shrink-0 items-center gap-3">
       <div className="grid h-10 w-10 place-items-center rounded-xl border border-accent/30 bg-accent/10 text-accent-soft shadow-glow">
         <Braces size={20} />
       </div>
@@ -668,7 +691,8 @@ function DistributionRoute({ features }: { features: Feature[] }) {
   const promptDist = useDataArtifact<ConceptDistributionType>("prompt_concept_distribution.json");
   const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
   const [kind, setKind] = useState<"response" | "prompt">("response");
-  const [group, setGroup] = useState("");
+  const { filters } = useAnalysisFilters();
+  const group = filters.group;
   const [selected, setSelected] = useState<number | null>(null);
 
   useEffect(() => {
@@ -694,14 +718,15 @@ function DistributionRoute({ features }: { features: Feature[] }) {
       <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-edge/70 bg-panel/55 p-2">
         <Segmented
           value={activeKind}
-          onChange={(next) => { setKind(next); setSelected(null); setGroup(""); }}
+          onChange={(next) => { setKind(next); setSelected(null); }}
           options={available}
         />
-        <span className="hidden pr-2 text-xs text-slate-500 sm:block">Choose the sparse code space to summarize</span>
+        <span className="hidden pr-2 text-xs text-slate-500 sm:block">Choose prompts or answers</span>
       </div>
     )}
     <ConceptDistributionView dist={dist} kind={activeKind} group={group}
-      onGroupChange={(next) => { setGroup(next); setSelected(null); }} onSelectConcept={setSelected} />
+      features={activeKind === "response" ? features : promptFeatureRows}
+      onSelectConcept={setSelected} />
     {selected != null && activeKind === "response" && (
       <ConceptDetailDrawer featureId={selected} features={features}
         initialGroup={group} onClose={() => setSelected(null)} onSelectFeature={setSelected} />
@@ -713,11 +738,11 @@ function DistributionRoute({ features }: { features: Feature[] }) {
   </>;
 }
 
-function CoactivationRoute({ focus, onJumpFeature }: { focus: number | null; onJumpFeature: (fid: number) => void }) {
+function CoactivationRoute({ focus, features, onJumpFeature }: { focus: number | null; features: Feature[]; onJumpFeature: (fid: number) => void }) {
   const coact = useDataArtifact<ConceptCoactivationType>("coactivation.json");
   if (coact === undefined) return <SkeletonList n={2} itemClass="h-48" />;
   if (!coact) return <ArtifactNotice>This bundle has no <code>coactivation.json</code>. Re-run <code>prefscope-viewer</code> to add it.</ArtifactNotice>;
-  return <CoactivationView coact={coact} selected={focus} onSelectConcept={onJumpFeature} />;
+  return <CoactivationView coact={coact} features={features} selected={focus} onSelectConcept={onJumpFeature} />;
 }
 
 function Navigation({ view, onNavigate, client }: { view: ViewId; onNavigate: (view: ViewId) => void; client?: PrefScopeDataClient }) {
@@ -729,7 +754,7 @@ function Navigation({ view, onNavigate, client }: { view: ViewId; onNavigate: (v
     return item.requires.split("|").some((name) => client.hasArtifact(name));
   });
   return (
-    <nav className="mt-8 space-y-1" aria-label="Analysis views">
+    <nav className="mt-6 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-3 pr-1 [scrollbar-gutter:stable]" aria-label="Analysis views">
       {available.map((item) => {
         const Icon = item.icon;
         const group = item.group && item.group !== lastGroup ? item.group : null;
@@ -764,14 +789,14 @@ function BundleStatus({ bundle }: { bundle: Bundle | null }) {
   const mf = bundle?.manifest;
   const healthy = !!mf && mf.schema_version === BUNDLE_SCHEMA_VERSION && !(mf.errors?.length);
   return (
-    <div className="absolute bottom-6 left-4 right-4 rounded-xl border border-edge/70 bg-panel/45 p-3">
+    <div className="mt-4 shrink-0 rounded-xl border border-edge/70 bg-panel/45 p-3">
       <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
         {bundle ? <Database size={14} className={healthy ? "text-good" : "text-amber-400"} /> : <RefreshCw size={14} className="animate-spin text-slate-500" />}
         {bundle ? bundle.meta.lens : "Loading bundle"}
       </div>
       {bundle && (
         <div className="mt-1 truncate text-[10px] text-slate-600" title={bundle.meta.embed_model_id ?? ""}>
-          {bundle.features.length.toLocaleString()} features · {mf?.files.length ?? "legacy"} artifacts
+          {bundle.features.length.toLocaleString()} features · {mf?.files.length ?? "legacy"} files
         </div>
       )}
     </div>

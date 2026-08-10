@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import type { ConceptDistribution as Dist, ConceptDistributionFeature } from "../types";
+import type { ConceptDistribution as Dist, ConceptDistributionFeature, Feature } from "../types";
 import { Card, ConceptLabel, Explain, Metric, Segmented, conceptLabel } from "./ui";
 import { VirtualList } from "./VirtualList";
+import { answerTypeOf, useAnalysisFilters } from "../analysisFilters";
 
 type Sort = "prevalence" | "rarity" | "strength";
 
@@ -66,15 +67,19 @@ export default function ConceptDistribution({
   group = "",
   onGroupChange,
   onSelectConcept,
+  features = [],
 }: {
   dist: Dist;
   kind?: "response" | "prompt";
   group?: string;
   onGroupChange?: (group: string) => void;
   onSelectConcept?: (featureId: number) => void;
+  features?: Feature[];
 }) {
   const [sort, setSort] = useState<Sort>("prevalence");
   const [query, setQuery] = useState("");
+  const { filters: globalFilters } = useAnalysisFilters();
+  const featureById = useMemo(() => new Map(features.map((feature) => [feature.feature_id, feature])), [features]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -85,6 +90,8 @@ export default function ConceptDistribution({
         )
       : dist.features;
     if (group) filtered = filtered.filter((feature) => (feature.group_fire_rate?.[group] ?? 0) > 0);
+    if (kind === "response" && globalFilters.answerType !== "all")
+      filtered = filtered.filter((feature) => answerTypeOf(featureById.get(feature.feature_id)) === globalFilters.answerType);
     const live = filtered.filter((f) => f.n_active > 0);
     const rate = (feature: ConceptDistributionFeature) =>
       group ? feature.group_fire_rate?.[group] ?? 0 : feature.fire_rate;
@@ -94,7 +101,7 @@ export default function ConceptDistribution({
       strength: (a, b) => b.mean_activation - a.mean_activation,
     };
     return [...live].sort(cmp[sort]);
-  }, [dist.features, sort, query, group]);
+  }, [dist.features, sort, query, group, kind, globalFilters.answerType, featureById]);
 
   const rateOf = (feature: ConceptDistributionFeature) =>
     group ? feature.group_fire_rate?.[group] ?? 0 : feature.fire_rate;
@@ -107,16 +114,14 @@ export default function ConceptDistribution({
   return (
     <div className="space-y-4">
       <Explain>
-        How {conceptKind} are spread across the dataset: how much of the corpus each concept
-        covers, how many concepts a typical {rowKind} activates, and which interpreted
-        concepts never fire at all. Prevalence is measured on the {rowKind} lens's own
-        sparse codes, independent of any preference label. This view summarizes{" "}
+        See which {conceptKind} are common or rare, how many appear in a typical {rowKind},
+        and which concepts never appear. These counts do not use win labels. This view contains{" "}
         {dist.n_features.toLocaleString()} {dist.selection === "verified" ? "verified" : dist.selection === "named" ? "named" : "retained"}{" "}
         concepts{dist.n_total_features != null && dist.n_total_features !== dist.n_features
-          ? ` from ${dist.n_total_features.toLocaleString()} sparse axes`
+          ? ` from ${dist.n_total_features.toLocaleString()} learned features`
           : ""}.
-        {group && <> The concept table and opened examples are filtered to <b>{group}</b>;
-          headline cards remain whole-corpus summaries.</>}
+        {group && <> The concept table and opened examples use <b>{group}</b>;
+          the cards above still summarize the full dataset.</>}
       </Explain>
 
       <Card>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CoactivationPair, ConceptCoactivation } from "../types";
+import type { CoactivationPair, ConceptCoactivation, Feature } from "../types";
 import { Card, ConceptLabel, Explain, Metric, Segmented, conceptLabel } from "./ui";
 import { VirtualList } from "./VirtualList";
 import CoactivationPairEvidence from "./CoactivationPairEvidence";
+import { answerTypeOf, useAnalysisFilters } from "../analysisFilters";
 
 type Scope = "all" | "selected";
 
@@ -11,10 +12,12 @@ const nameOf = (p: CoactivationPair, side: "a" | "b") =>
 
 export default function Coactivation({
   coact,
+  features,
   selected,
   onSelectConcept,
 }: {
   coact: ConceptCoactivation;
+  features: Feature[];
   /** Optional concept to centre the view on. */
   selected?: number | null;
   onSelectConcept?: (featureId: number) => void;
@@ -22,6 +25,8 @@ export default function Coactivation({
   const [scope, setScope] = useState<Scope>(selected == null ? "all" : "selected");
   const [query, setQuery] = useState("");
   const [openPair, setOpenPair] = useState<string | null>(null);
+  const { filters } = useAnalysisFilters();
+  const featureById = useMemo(() => new Map(features.map((feature) => [feature.feature_id, feature])), [features]);
 
   useEffect(() => {
     if (selected != null) setScope("selected");
@@ -33,6 +38,11 @@ export default function Coactivation({
     if (scope === "selected" && selected != null) {
       rows = rows.filter((p) => p.a === selected || p.b === selected);
     }
+    if (filters.answerType !== "all") {
+      rows = rows.filter((pair) =>
+        answerTypeOf(featureById.get(pair.a)) === filters.answerType
+        && answerTypeOf(featureById.get(pair.b)) === filters.answerType);
+    }
     if (q) {
       rows = rows.filter(
         (p) =>
@@ -40,7 +50,7 @@ export default function Coactivation({
       );
     }
     return rows;
-  }, [coact.pairs, scope, selected, query]);
+  }, [coact.pairs, scope, selected, query, filters.answerType, featureById]);
 
   const maxLift = useMemo(
     () => pairs.reduce((m, p) => (p.lift > m ? p.lift : m), 0) || 1,
@@ -58,10 +68,9 @@ export default function Coactivation({
   return (
     <div className="space-y-4">
       <Explain>
-        Each row contains two response concepts found together more often than their
-        individual frequencies would suggest. A value of 2× means the pair appears together
-        twice as often as expected. Open the examples to inspect the actual responses;
-        co-activation is descriptive and does not show that either concept causes the other.
+        Each row has two answer concepts that appear together more often than expected.
+        A value of 2× means they appear together twice as often as usual. Open an example
+        to inspect the answer. Appearing together does not show that one caused the other.
       </Explain>
 
       <Card>

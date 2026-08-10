@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type {
-  BehaviorCategory, ConditionalBundle, ElicitationData, Example, Feature,
+  BehaviorCategory, ConceptDistribution, ConditionalBundle, ElicitationData, Example, Feature,
 } from "../types";
 import {
   Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, Segmented, SkeletonList, clip, divergeColor, WINRATE_REF, VerifiedBadge,
 } from "./ui";
-import { fmt, pct, useFeatureExamples } from "../data";
+import { fmt, pct, useDataArtifact, useFeatureExamples } from "../data";
 import JointEvidence from "./JointEvidence";
 import { VirtualList } from "./VirtualList";
-import { ActivationEvidenceCard, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
+import { ActivationEvidenceCard, EvidenceModeSelect, EvidencePager, ExampleGroupSelect, activationDomain, evidenceMode, evidenceModes, type EvidenceMode } from "./ActivationEvidence";
+import { answerTypeOf, useAnalysisFilters } from "../analysisFilters";
 
 // Feature-first hub (master-detail). Left: browse/sort/filter response features. Right:
 // the selected feature's fire rate + reward (header, always visible) and three sub-tabs —
@@ -49,6 +50,14 @@ export default function FeaturePanel({
   const [verifiedOnly, setVerifiedOnly] = useState(anyVerified);
   const [sel, setSel] = useState<number | null>(null);
   const [sub, setSub] = useState<SubTab>("activated");
+  const { filters } = useAnalysisFilters();
+  const distribution = useDataArtifact<ConceptDistribution>("concept_distribution.json");
+  const groupRates = useMemo(() => new Map(
+    (distribution?.features ?? []).map((feature) => [
+      feature.feature_id,
+      filters.group ? feature.group_fire_rate?.[filters.group] ?? 0 : feature.fire_rate,
+    ]),
+  ), [distribution, filters.group]);
 
   const hasContextClassification = useMemo(
     () => features.some((f) => f.behavior_category != null), [features]);
@@ -62,17 +71,19 @@ export default function FeaturePanel({
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     let r = named.filter((f) => !q || (f.concept ?? "").toLowerCase().includes(q));
+    if (filters.group) r = r.filter((f) => (groupRates.get(f.feature_id) ?? 0) > 0);
+    if (filters.answerType !== "all") r = r.filter((f) => answerTypeOf(f) === filters.answerType);
     if (verifiedOnly) r = r.filter((f) => f.fidelity_pass);
     if (category) r = r.filter((f) =>
       (f.behavior_category ?? "unclassified") === category);
     const rew = (f: Feature) => f.delta_win_rate ?? f.win_assoc ?? 0;
     return [...r].sort((a, b) => {
       if (sortBy === "reward") return Math.abs(rew(b)) - Math.abs(rew(a));
-      if (sortBy === "generality") return (b.generality ?? -1) - (a.generality ?? -1);
+      if (sortBy === "generality") return (groupRates.get(b.feature_id) ?? b.generality ?? -1) - (groupRates.get(a.feature_id) ?? a.generality ?? -1);
       if (sortBy === "fidelity") return Number(b.fidelity_pass ?? false) - Number(a.fidelity_pass ?? false) || Math.abs(rew(b)) - Math.abs(rew(a));
       return (a.concept ?? "").localeCompare(b.concept ?? "");
     });
-  }, [named, query, category, verifiedOnly, sortBy]);
+  }, [named, query, category, verifiedOnly, sortBy, filters.group, filters.answerType, groupRates]);
 
   // default / cross-tab focus selection
   const handledFocus = useRef<unknown>(null);
@@ -106,12 +117,16 @@ export default function FeaturePanel({
   return (
     <div className="flex flex-col gap-4">
       <Explain>
-        Browse by <b>response feature</b> (a sparse pattern the SAE found). Pick one to see how
-        often it fires, which prompts activate it,{hasLabels && <> how much humans reward it
+        Browse by <b>answer concept</b>. Pick one to see how often it appears, which prompts bring
+        it out,{hasLabels && <> how much people reward it
         (Δwin in <b>pp</b> = percentage points of win rate, length-controlled), and where it
-        helps or hurts winning,</>} with example answers. This is the corpus-wide view; per-model
-        model-specific tendencies are in <i>Model report</i>.
+        helps or hurts winning,</>} with example answers.
       </Explain>
+      {filters.group && (
+        <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200/80">
+          The list, answer share, and examples use {filters.groupColumn}={filters.group}. Prompt links and win results still use all languages.
+        </p>
+      )}
 
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* master list */}
@@ -133,7 +148,7 @@ export default function FeaturePanel({
                   className="w-full rounded-lg border border-edge bg-ink px-2 py-2 text-xs text-slate-300 outline-none focus:border-accent/60">
                   {hasLabels && <option value="reward">Reward effect</option>}
                   <option value="generality">Fire rate</option>
-                  <option value="fidelity">Fidelity</option>
+                  <option value="fidelity">Label check</option>
                   <option value="name">Name</option>
                 </select>
               </label>
@@ -152,11 +167,11 @@ export default function FeaturePanel({
               </label>
             </div>
             {!hasContextClassification && <p className="text-[10px] text-amber-400/80">
-              No semantic/context profile; features are unclassified.
+              No concept types were exported.
             </p>}
             <label className="flex items-start gap-2 rounded-lg bg-ink/35 p-2 text-[11px] leading-snug text-slate-400">
               <input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="mt-0.5 accent-accent" />
-              <span><b className="font-medium text-slate-300">Verified labels only</b><br />Unverified features do not have prompt or reward relationships.</span>
+              <span><b className="font-medium text-slate-300">Checked labels only</b><br />Unchecked concepts may not have prompt or win results.</span>
             </label>
             <div className="flex items-center justify-between border-t border-edge/60 pt-2 text-[11px] text-slate-500">
               <span>{rows.length.toLocaleString()} of {named.length.toLocaleString()} response concepts</span>
@@ -177,21 +192,22 @@ export default function FeaturePanel({
               renderRow={(f) => {
               const rew = f.delta_win_rate ?? f.win_assoc ?? 0;
               const rsig = f.delta_win_significant ?? f.win_significant ?? false;
+              const fireRate = groupRates.get(f.feature_id) ?? f.generality;
               return (
                 <button onClick={() => setSel(f.feature_id)}
                   className={`flex h-full w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
                     sel === f.feature_id ? "bg-accent/20 text-slate-100" : "text-slate-300 hover:bg-edge/40"}`}>
                   {!verifiedOnly && (
                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${f.fidelity_pass ? "bg-good ring-2 ring-good/10" : "bg-slate-700"}`}
-                      title={f.fidelity_pass ? "fidelity check passed" : "label not fidelity-verified"}
-                      aria-label={f.fidelity_pass ? "fidelity check passed" : "label not fidelity-verified"} />
+                      title={f.fidelity_pass ? "label check passed" : "label not checked"}
+                      aria-label={f.fidelity_pass ? "label check passed" : "label not checked"} />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block overflow-hidden" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                       <ConceptLabel id={f.feature_id} name={f.concept} wrap />
                     </span>
                     <span className="block text-[10px] tabular-nums text-slate-600" title="fire rate: % of responses this feature appears in">
-                      fires {f.generality != null ? `${(f.generality * 100).toFixed(f.generality < 0.01 ? 1 : 0)}%` : "—"}
+                      appears in {fireRate != null ? `${(fireRate * 100).toFixed(fireRate < 0.01 ? 1 : 0)}%` : "—"}
                     </span>
                   </span>
                   {hasLabels && (
@@ -226,8 +242,10 @@ export default function FeaturePanel({
                 </span>
               </h3>
               <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-                <Stat label="fire rate" value={feat.generality != null ? pct(feat.generality, feat.generality < 0.01 ? 1 : 0) : "—"}
-                  sub="% of responses it appears in" />
+                <Stat label="answer share" value={(groupRates.get(feat.feature_id) ?? feat.generality) != null
+                  ? pct(groupRates.get(feat.feature_id) ?? feat.generality, (groupRates.get(feat.feature_id) ?? feat.generality ?? 0) < 0.01 ? 1 : 0)
+                  : "—"}
+                  sub="answers where it appears" />
                 {hasLabels && (() => {
                   const rsig = feat.delta_win_significant ?? feat.win_significant ?? false;
                   return (
@@ -239,7 +257,7 @@ export default function FeaturePanel({
                 })()}
                 <Stat label="prompt types" value={feat.n_prompt_types != null ? String(feat.n_prompt_types) : "—"} sub="sig. elicitors" />
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider text-slate-500">fidelity</div>
+                  <div className="text-[11px] uppercase tracking-wider text-slate-500">label check</div>
                   <div className="mt-0.5"><VerifiedBadge pass={feat.fidelity_pass} n={feat.fidelity_n} /></div>
                 </div>
               </div>
@@ -247,7 +265,7 @@ export default function FeaturePanel({
               {feat.semantic_role && (
                 <div className="mt-3 border-t border-edge/60 pt-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Prompt–response role assessment
+                    Concept type
                   </p>
                   {feat.feature_summary && (
                     <p className="mt-1 text-xs leading-relaxed text-slate-300">
@@ -269,8 +287,8 @@ export default function FeaturePanel({
                   (feat.behavior_category ?? "unclassified").replace(/_/g, " ")
                 }</span>
                 {feat.presence_pass
-                  ? <> · semantic presence calibrated (precision LCB {feat.precision_lcb != null ? feat.precision_lcb.toFixed(2) : "—"})</>
-                  : <> · nonzero activations are not calibrated as semantic presence</>}
+                  ? <> · label cutoff checked</>
+                  : <> · no checked label cutoff</>}
               </p>
               {feat.behavior && <p className="mt-2 text-[11px] text-slate-500">cluster: {feat.behavior}</p>}
             </Card>
@@ -281,7 +299,8 @@ export default function FeaturePanel({
             {activeSub === "activated" && <ActivatedBy elicitation={elicitation} fid={feat.feature_id} responseName={feat.concept} unverified={!feat.fidelity_pass} onJumpPrompt={onJumpPrompt} />}
             {activeSub === "reward" && <RewardByPrompt cond={cond} fid={feat.feature_id} responseName={feat.concept} overall={feat.delta_win_rate} unverified={!feat.fidelity_pass} onJumpPrompt={onJumpPrompt} />}
             {activeSub === "examples" && <FeatureExamples items={exItems} concept={conceptLabel(feat.feature_id, feat.concept)}
-              contrastOnly={lensInputRep === "difference" || lensInputRep === "individual"} />}
+              contrastOnly={lensInputRep === "difference" || lensInputRep === "individual"}
+              semanticThreshold={feat.semantic_threshold} />}
           </div>
         )}
       </div>
@@ -374,8 +393,8 @@ function ActivatedBy({ elicitation, fid, responseName, unverified, onJumpPrompt 
         </label>
       )}
       {rows.length === 0 ? <p className="px-1 py-3 text-sm text-slate-500">
-        {!elicitation ? "No prompt–response linkage artifact is included in this bundle."
-          : unverified ? "This feature hasn't passed verification — prompt-association analysis only runs on verified features."
+        {!elicitation ? "Prompt→answer links were not included in this dataset."
+          : unverified ? "This name has not passed its label check, so prompt links were not calculated."
           : "No specific prompt raises this feature above its base rate (it fires broadly)."}</p> :
         rows.map((r) => <ConceptBarRow key={r.id} id={r.id} name={r.name} value={`×${r.lift.toFixed(1)}`}
           title={`lift ×${r.lift.toFixed(2)} · fires ${pct(r.pyx, 0)}${r.sig ? "" : " (ns)"}`}
@@ -429,8 +448,8 @@ function RewardByPrompt({ cond, fid, responseName, overall, unverified, onJumpPr
         </label>
       )}
       {rows.length === 0 ? <p className="px-1 py-3 text-sm text-slate-500">
-        {!cond ? "No conditional win data in this bundle."
-          : unverified ? "This feature hasn't passed verification — per-prompt-type reward only runs on verified features."
+        {!cond ? "No win results were included in this dataset."
+          : unverified ? "This name has not passed its label check, so per-prompt win results were not calculated."
           : "No prompt-type reward data for this feature."}</p> :
         rows.map((r) => (
           <ConceptBarRow key={r.id} id={r.id} name={r.name} value={`${r.delta >= 0 ? "+" : ""}${Math.round(r.delta * 100)}pp`}
@@ -447,10 +466,11 @@ function RewardByPrompt({ cond, fid, responseName, overall, unverified, onJumpPr
   );
 }
 
-function FeatureExamples({ items: raw, concept, contrastOnly }: {
+function FeatureExamples({ items: raw, concept, contrastOnly, semanticThreshold }: {
   items: Example[] | null | undefined;
   concept: string;
   contrastOnly?: boolean;
+  semanticThreshold?: number | null;
 }) {
   // Single-response data has no second answer, so there is no side to choose and no
   // contrast to report: the activation is simply the concept's strength on that response.
@@ -458,8 +478,12 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
     () => (raw ?? []).some((e) => Boolean(e.completion_b)),
     [raw],
   );
-  const [group, setGroup] = useState("");
-  useEffect(() => { setGroup(""); }, [concept]);
+  const { filters, setGroup } = useAnalysisFilters();
+  const group = filters.group;
+  const [mode, setMode] = useState<EvidenceMode>("strongest");
+  const [exampleIndex, setExampleIndex] = useState(0);
+  useEffect(() => { setMode("strongest"); setExampleIndex(0); }, [concept]);
+  useEffect(() => { setExampleIndex(0); }, [group, mode]);
   const allItems = useMemo(() => {
     return (raw ?? []).map((e) => {
       const aSide = e.z >= 0; // A exhibits the feature more when z_diff > 0
@@ -470,11 +494,18 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
         completion: paired ? (aSide ? e.completion_a : e.completion_b) : e.completion_a,
         group: e.group,
         groupColumn: e.group_column,
+        activationPercentile: e.activation_percentile,
+        activationReference: e.activation_reference,
+        selectionKind: e.selection_kind,
       };
     }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
   }, [raw, paired]);
   const groups = useMemo(() => [...new Set(allItems.map((item) => item.group).filter((value): value is string => Boolean(value)))].sort(), [allItems]);
-  const items = useMemo(() => allItems.filter((item) => !group || item.group === group).slice(0, 12), [allItems, group]);
+  const modes = useMemo(() => evidenceModes(allItems.map((item) => ({ selection_kind: item.selectionKind }))), [allItems]);
+  const effectiveMode = modes.includes(mode) ? mode : modes[0] ?? "strongest";
+  const items = useMemo(() => allItems.filter((item) =>
+    (!group || item.group === group) && evidenceMode(item.selectionKind) === effectiveMode,
+  ).slice(0, 12), [allItems, group, effectiveMode]);
   const domain = useMemo(() => activationDomain(allItems.map((item) => item.z)), [allItems]);
   const groupColumn = allItems.find((item) => item.groupColumn)?.groupColumn ?? "language";
   const loading = raw === undefined;
@@ -487,7 +518,7 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
     );
   return (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-sm font-semibold text-slate-200">{paired ? `Examples with strongest contrast on “${concept}”` : `Strongest examples of “${concept}”`}</h4><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-sm font-semibold text-slate-200">Evidence for “{concept}”</h4><div className="flex flex-wrap items-center gap-3"><EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} /><ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} /><EvidencePager index={Math.min(exampleIndex, Math.max(0, items.length - 1))} count={items.length} onChange={setExampleIndex} /></div></div>
       {contrastOnly && paired && (
         <p className="mt-1 text-[11px] leading-relaxed text-amber-300/80">
           Selected by relative axis contrast: this side scores above the paired answer. That
@@ -495,10 +526,13 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
         </p>
       )}
       {items.length === 0 ? <p className="mt-1 px-1 py-3 text-xs text-slate-500">No examples for this feature in the bundle.</p> : (
-        <div className="mt-2 flex flex-col gap-2">
-          {items.map((it, i) => <ActivationEvidenceCard key={i} prompt={it.prompt}
+        <div className="mt-2">
+          {(() => { const it = items[exampleIndex] ?? items[0]; return <ActivationEvidenceCard prompt={it.prompt}
             response={it.completion} value={it.z} min={domain.min} max={domain.max}
-            label={paired ? "A−B contrast" : "Activation"} model={it.model} />)}
+            label={paired ? "A−B contrast" : "Activation"} model={it.model}
+            percentile={it.activationPercentile}
+            threshold={it.activationReference === "positive_activation" ? semanticThreshold : null}
+            selectionKind={it.selectionKind} />; })()}
         </div>
       )}
     </Card>

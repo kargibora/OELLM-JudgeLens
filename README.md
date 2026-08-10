@@ -1,45 +1,36 @@
 # PrefScope Viewer
 
-PrefScope Viewer is an interactive response-concept explorer for PrefScope analysis bundles. It
-connects four questions that are otherwise easy to inspect in isolation:
+PrefScope Viewer is an interactive prompt and answer concept explorer for PrefScope data. It
+connects four questions:
 
-- What response concepts does a corpus contain?
-- Which prompt types elicit it?
-- How does that differ across models or correlate with preferences?
-- What examples, support, verification, and confound checks justify the claim?
+- What prompt and answer concepts does a dataset contain?
+- Which answer concepts appear for each type of prompt?
+- How do answer sets or models differ?
+- What examples and checks support each result?
 
 The repository works both as a standalone Vite application and as the
 `@prefscope/viewer` React package.
 
 ## What the interface provides
 
-- **Discover** — analysis coverage, SAE reconstruction, verification, and direct paths
-  into prompt-, behavior-, and model-first exploration.
-- **Prompt behavior** — prompt features or clusters, response behaviors they elicit,
-  conditional preference associations, support, matched prompt–response evidence, and
-  prompt concepts that are frequently active on the same requests.
-- **Concept distribution** — switch between response and prompt sparse-code spaces to
-  inspect corpus coverage, concepts per item, prevalence, group differences, and evidence
-  for any listed concept. Language/source selectors re-rank the concept table and carry
-  through to the opened example evidence when the exporter provides row metadata.
-- **Behaviors** — searchable response features with fidelity, prevalence, prompt
-  associations, conditional effects, and activation examples. Selecting an associated
-  prompt shows a response where both sparse concepts activate.
-- **Models** — per-model prevalence, same-prompt contrasts, model-to-model comparisons,
-  prompt-type performance, and evidence drill-downs.
-- **Reliability** — interpretation fidelity, length-confound screening, and honest
-  in-sample versus leave-one-model-out validation.
-- **Feature atlas** — every response and prompt SAE decoder axis in searchable UMAPs,
-  with fidelity filters, corpus examples, and dataset co-activation links. Statistical
-  co-firing communities can be browsed without collapsing their individual member axes;
-  clicking an atlas point focuses its local co-activation graph, and clicking the selected
-  point again opens a shared evidence drawer with its interpretation, strongest activators,
-  prompt links, and co-activation neighbors. Pair drill-ins show
-  transcripts where both sparse axes fire, including both activation magnitudes. Separate sampled
-  response, battle, and prompt scatters remain available when exported.
-- **Concept details** — distribution rows open the appropriate response or prompt evidence
-  drawer with the exact sparse axis, fidelity, strongest activators, and co-activation
-  examples; response drawers also include prompt links and matched prompt–response evidence.
+- **Dataset contents** — common and rare prompt or answer concepts, with language/source
+  breakdowns and examples.
+- **Prompt concepts** — matching prompts, related prompt concepts, answer concepts that
+  appear with them, and win results when labels are available.
+- **Answer concepts** — searchable answer concepts, prompt links, win results, and examples.
+- **Prompt → answer** — pick a prompt type and rank its answer concepts by frequency,
+  how unusual they are for that prompt, support, or win effect.
+- **Concept relationships** — answer concepts that appear together, with matched evidence.
+- **Models & comparisons** — model reports and prompt-matched answer-set differences.
+- **Data checks** — coverage, missing or weak names, repeated labels, and available views.
+- **Concept map** — searchable prompt and answer maps. Click a point once to focus it and
+  again to open its examples and related concepts.
+
+The top filter bar keeps the selected dataset, language/source, and answer type across
+views. Answer types are **behavior or style**, **prompt or topic**, **mixed or unclear**,
+and **not classified**. Pages state when a result still uses the full dataset. Long prompt
+and answer examples use left/right controls instead of stacking many transcripts. New
+exports can also switch between the strongest, a typical active, and a near-cutoff sample.
 
 Heavy artifacts are loaded by route and transcripts are requested explicitly. A complete
 bundle no longer blocks the first render.
@@ -123,14 +114,13 @@ Future exporters should give each dataset a self-contained manifest and capabili
 
 ## Interpretation rules
 
-The viewer uses conservative language by design:
+The viewer uses careful language by design:
 
-- A verified feature is an LLM-assigned label reproduced by an LLM verification step on
-  held-out examples; it is not human verification, necessarily a different model, or proof
-  that the feature is monosemantic.
+- A checked name is an LLM-written label reproduced by an LLM check on held-out examples.
+  It is not human verification and does not prove that the feature has only one meaning.
 - Preference effects describe what this dataset favors. They do not define whether a
   behavior is objectively good or bad.
-- Elicitation is a coactivation relationship, not a causal intervention.
+- Two concepts appearing together does not show that one caused the other.
 - Non-significant conditional estimates are hidden by default.
 - Lift is always displayed with co-occurrence support.
 - Legacy signed-feature examples selected by pairwise contrast are described as contrast
@@ -151,17 +141,19 @@ redacted snapshot and package it as the release asset referenced by
 ```bash
 python scripts/build_public_bundle.py \
   --source public/data \
-  --output /tmp/prefscope-public/completion_m2048
+  --output /tmp/prefscope-public/completion_m2048 \
+  --profile public
 
 tar -czf /tmp/completion_m2048-public.tar.gz \
   -C /tmp/prefscope-public completion_m2048
 ```
 
-The public profile retains aggregate results, caps activation evidence at three examples
-per feature and one transcript per displayed prompt–response or co-activation relationship,
-redacts common credential and personal-data patterns, and omits the monolithic per-model
-transcript artifact. The Pages workflow downloads this versioned release asset before
-building.
+The `public` profile retains aggregate results plus a compact language/source-stratified
+evidence sample, redacts common credential and personal-data patterns, and omits the
+monolithic per-model transcript artifact. Use `--profile collaborator` for richer
+stratified evidence or `--profile full` to retain every exported artifact. All profiles
+apply redaction; profile selection changes coverage, not the privacy guarantee. The Pages
+workflow downloads this versioned release asset before building.
 
 ## Package status
 

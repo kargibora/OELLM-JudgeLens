@@ -21,12 +21,17 @@ import {
 } from "./ui";
 import {
   ActivationEvidenceCard,
+  EvidenceModeSelect,
+  EvidencePager,
   ExampleGroupSelect,
   activationDomain,
+  evidenceMode,
+  evidenceModes,
+  type EvidenceMode,
 } from "./ActivationEvidence";
+import { answerTypeOf, useAnalysisFilters, type AnswerTypeFilter } from "../analysisFilters";
 
 type StatusFilter = "all" | "verified" | "named" | "failed" | "unnamed";
-type FamilyFilter = "all" | "behavioral" | "prompt_specific" | "mixed_or_unclear" | "unclassified";
 type ColorMode = "family" | "verification";
 
 const WIDTH = 1000;
@@ -47,12 +52,7 @@ const STATUS_COLORS = {
   unnamed: "#334155",
 };
 
-const featureFamily = (feature: Feature | undefined): FamilyFilter => {
-  const value = feature?.semantic_family;
-  if (value === "behavioral" || value === "prompt_specific" || value === "mixed_or_unclear")
-    return value;
-  return "unclassified";
-};
+const featureFamily = (feature: Feature | undefined) => answerTypeOf(feature);
 
 const statusOf = (feature: Feature | undefined) => {
   if (!feature || isUnnamed(feature.concept)) return "unnamed" as const;
@@ -63,8 +63,12 @@ const statusOf = (feature: Feature | undefined) => {
 
 export function AtlasExamples({ fid, concept, initialGroup = "" }: { fid: number; concept: string; initialGroup?: string }) {
   const raw = useFeatureExamples(fid);
-  const [group, setGroup] = useState(initialGroup);
-  useEffect(() => { setGroup(initialGroup); }, [fid, initialGroup]);
+  const { filters, setGroup } = useAnalysisFilters();
+  const group = initialGroup || filters.group;
+  const [mode, setMode] = useState<EvidenceMode>("strongest");
+  const [exampleIndex, setExampleIndex] = useState(0);
+  useEffect(() => { setMode("strongest"); setExampleIndex(0); }, [fid]);
+  useEffect(() => { setExampleIndex(0); }, [group, mode]);
   const paired = useMemo(() => (raw ?? []).some((row) => Boolean(row.completion_b)), [raw]);
   const allExamples = useMemo(() => (raw ?? []).map((row: Example) => {
     const aSide = row.z >= 0;
@@ -75,10 +79,16 @@ export function AtlasExamples({ fid, concept, initialGroup = "" }: { fid: number
       response: paired ? (aSide ? row.completion_a : row.completion_b) : row.completion_a,
       group: row.group,
       groupColumn: row.group_column,
+      activationPercentile: row.activation_percentile,
+      selectionKind: row.selection_kind,
     };
   }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)), [raw, paired]);
   const groups = useMemo(() => [...new Set(allExamples.map((row) => row.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
-  const examples = useMemo(() => allExamples.filter((row) => !group || row.group === group).slice(0, 6), [allExamples, group]);
+  const modes = useMemo(() => evidenceModes(allExamples.map((row) => ({ selection_kind: row.selectionKind }))), [allExamples]);
+  const effectiveMode = modes.includes(mode) ? mode : modes[0] ?? "strongest";
+  const examples = useMemo(() => allExamples.filter((row) =>
+    (!group || row.group === group) && evidenceMode(row.selectionKind) === effectiveMode,
+  ).slice(0, 6), [allExamples, group, effectiveMode]);
   const domain = useMemo(() => activationDomain(allExamples.map((row) => row.z)), [allExamples]);
   const groupColumn = allExamples.find((row) => row.groupColumn)?.groupColumn ?? "language";
   const missingGroupMetadata = Boolean(group && raw && groups.length === 0);
@@ -89,8 +99,8 @@ export function AtlasExamples({ fid, concept, initialGroup = "" }: { fid: number
   return (
     <Card>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-slate-100">Strongest corpus examples</h3>
-        <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /><span className="text-xs text-slate-500">{examples.length} shown</span></div>
+        <h3 className="text-sm font-semibold text-slate-100">Answer examples</h3>
+        <div className="flex flex-wrap items-center gap-3"><EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} /><ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} /><EvidencePager index={Math.min(exampleIndex, Math.max(0, examples.length - 1))} count={examples.length} onChange={setExampleIndex} /></div>
       </div>
       {examples.length === 0 ? (
         <p className="text-sm text-slate-500">
@@ -101,11 +111,12 @@ export function AtlasExamples({ fid, concept, initialGroup = "" }: { fid: number
               : <>No text example was exported for {concept}. Re-export with <code>--corpus</code>.</>}
         </p>
       ) : (
-        <div className="space-y-2">{examples.map((example, index) => (
-          <ActivationEvidenceCard key={index} prompt={example.prompt} response={example.response}
+        <div>{(() => { const example = examples[exampleIndex] ?? examples[0]; return (
+          <ActivationEvidenceCard prompt={example.prompt} response={example.response}
             value={example.z} min={domain.min} max={domain.max}
-            label={paired ? "A−B contrast" : "Activation"} model={example.model} />
-        ))}</div>
+            label={paired ? "A−B contrast" : "Activation"} model={example.model}
+            percentile={example.activationPercentile} selectionKind={example.selectionKind} />
+        ); })()}</div>
       )}
     </Card>
   );
@@ -113,14 +124,22 @@ export function AtlasExamples({ fid, concept, initialGroup = "" }: { fid: number
 
 export function PromptAtlasExamples({ fid, concept, initialGroup = "" }: { fid: number; concept: string; initialGroup?: string }) {
   const raw = usePromptExamples(fid);
-  const [group, setGroup] = useState(initialGroup);
-  useEffect(() => { setGroup(initialGroup); }, [fid, initialGroup]);
+  const { filters, setGroup } = useAnalysisFilters();
+  const group = initialGroup || filters.group;
+  const [mode, setMode] = useState<EvidenceMode>("strongest");
+  const [exampleIndex, setExampleIndex] = useState(0);
+  useEffect(() => { setMode("strongest"); setExampleIndex(0); }, [fid]);
+  useEffect(() => { setExampleIndex(0); }, [group, mode]);
   const allExamples = useMemo(
     () => (raw ?? []).slice().sort((a: PromptExample, b: PromptExample) => b.z - a.z),
     [raw],
   );
   const groups = useMemo(() => [...new Set(allExamples.map((row) => row.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
-  const examples = useMemo(() => allExamples.filter((row) => !group || row.group === group).slice(0, 8), [allExamples, group]);
+  const modes = useMemo(() => evidenceModes(allExamples), [allExamples]);
+  const effectiveMode = modes.includes(mode) ? mode : modes[0] ?? "strongest";
+  const examples = useMemo(() => allExamples.filter((row) =>
+    (!group || row.group === group) && evidenceMode(row.selection_kind) === effectiveMode,
+  ).slice(0, 8), [allExamples, group, effectiveMode]);
   const domain = useMemo(() => activationDomain(allExamples.map((row) => row.z)), [allExamples]);
   const groupColumn = allExamples.find((row) => row.group_column)?.group_column ?? "language";
   const missingGroupMetadata = Boolean(group && raw && groups.length === 0);
@@ -130,7 +149,7 @@ export function PromptAtlasExamples({ fid, concept, initialGroup = "" }: { fid: 
     <Card>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-slate-100">Strongest prompt examples</h3>
-        <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /><span className="text-xs text-slate-500">{examples.length} shown</span></div>
+        <div className="flex flex-wrap items-center gap-3"><EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} /><ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} /><EvidencePager index={Math.min(exampleIndex, Math.max(0, examples.length - 1))} count={examples.length} onChange={setExampleIndex} /></div>
       </div>
       {raw === null ? (
         <p className="text-sm text-slate-500">No prompt examples were exported for {concept}.</p>
@@ -139,14 +158,15 @@ export function PromptAtlasExamples({ fid, concept, initialGroup = "" }: { fid: 
           {missingGroupMetadata
             ? `This older example shard has no ${groupColumn} metadata. Re-export it to filter evidence.`
             : group
-              ? `No retained ${groupColumn}=${group} prompt for this axis.`
-              : "This axis has no positive activation in the prompt corpus. No unrelated example is substituted."}
+              ? `No saved ${groupColumn}=${group} prompt for this concept.`
+              : "No matching prompt example was saved for this concept."}
         </p>
       ) : (
-        <div className="space-y-2">{examples.map((example, index) => (
-          <ActivationEvidenceCard key={index} prompt={example.prompt} value={example.z}
-            min={domain.min} max={domain.max} />
-        ))}</div>
+        <div>{(() => { const example = examples[exampleIndex] ?? examples[0]; return (
+          <ActivationEvidenceCard prompt={example.prompt} value={example.z}
+            min={domain.min} max={domain.max} percentile={example.activation_percentile}
+            selectionKind={example.selection_kind} />
+        ); })()}</div>
       )}
     </Card>
   );
@@ -187,7 +207,8 @@ export default function FeatureAtlasView({
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [family, setFamily] = useState<FamilyFilter>("all");
+  const { filters, setAnswerType } = useAnalysisFilters();
+  const family = filters.answerType;
   const [colorMode, setColorMode] = useState<ColorMode>(kind === "prompt" ? "verification" : "family");
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
 
@@ -206,14 +227,6 @@ export default function FeatureAtlasView({
     }));
   }, [map]);
   const pointById = useMemo(() => new Map(projected.map((point) => [point.feature_id, point])), [projected]);
-
-  useEffect(() => {
-    if (selectedId != null && pointById.has(selectedId)) return;
-    const first = projected.find((point) => byId.get(point.feature_id)?.fidelity_pass)
-      ?? projected.find((point) => !isUnnamed(byId.get(point.feature_id)?.concept))
-      ?? projected[0];
-    setSelectedId(first?.feature_id ?? null);
-  }, [byId, pointById, projected, selectedId]);
 
   const q = query.trim().toLowerCase();
   const passesFilter = (point: FeatureMapPoint) => {
@@ -235,6 +248,13 @@ export default function FeatureAtlasView({
       || (feature?.feature_summary ?? "").toLowerCase().includes(q);
   };
   const filtered = useMemo(() => projected.filter(passesFilter), [projected, byId, status, family]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (selectedId != null && filtered.some((point) => point.feature_id === selectedId)) return;
+    const first = filtered.find((point) => byId.get(point.feature_id)?.fidelity_pass)
+      ?? filtered.find((point) => !isUnnamed(byId.get(point.feature_id)?.concept))
+      ?? filtered[0];
+    setSelectedId(first?.feature_id ?? null);
+  }, [byId, filtered, selectedId]);
   const listed = useMemo(() => filtered.filter(queryMatch).sort((a, b) => {
     if (String(a.feature_id) === q) return -1;
     if (String(b.feature_id) === q) return 1;
@@ -248,9 +268,11 @@ export default function FeatureAtlasView({
     if (selectedId == null || !coactivation) return [] as CoactivationPair[];
     return coactivation.pairs
       .filter((pair) => pair.a === selectedId || pair.b === selectedId)
+      .filter((pair) => family === "all"
+        || (featureFamily(byId.get(pair.a)) === family && featureFamily(byId.get(pair.b)) === family))
       .sort((a, b) => b.lift - a.lift || b.count - a.count)
       .slice(0, 16);
-  }, [coactivation, selectedId]);
+  }, [coactivation, selectedId, family, byId]);
   const edgeIds = useMemo(() => new Set(pairs.flatMap((pair) => [pair.a, pair.b])), [pairs]);
 
   const colorOf = (point: FeatureMapPoint) => {
@@ -312,20 +334,18 @@ export default function FeatureAtlasView({
   return (
     <div className="space-y-4">
       <Explain>
-        Every dot is one {kind === "prompt" ? "prompt" : "response"} SAE feature. Position is a
-        UMAP of decoder directions using cosine distance; names do not determine geometry.
-        Click a feature once to focus it and reveal its co-activation graph; click the
-        selected feature again to open the evidence drawer. Lines show observed {kind === "prompt" ? "prompt" : "response"}{" "}
-        co-activation and are a separate corpus-level association, not proof that either
-        label is present or causal.
+        Every dot is one learned {kind === "prompt" ? "prompt" : "answer"} feature. Nearby dots
+        have similar learned directions; the names do not set their positions. Click once to
+        focus a feature and see its links. Click it again to open its examples. A line means
+        two concepts often appear together, not that one causes the other.
       </Explain>
 
       <Card>
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-50">{kind === "prompt" ? "Prompt feature atlas" : "Response feature atlas"}</h2>
+            <h2 className="text-lg font-semibold text-slate-50">{kind === "prompt" ? "Prompt concept map" : "Answer concept map"}</h2>
             <p className="mt-1 text-xs text-slate-500">
-              {map.n_total.toLocaleString()} / {map.n_total.toLocaleString()} axes plotted · {map.n_named.toLocaleString()} named · {map.n_verified.toLocaleString()} labels passed fidelity · {map.projection.toUpperCase()} ({map.metric})
+              {map.n_total.toLocaleString()} features plotted · {map.n_named.toLocaleString()} named · {map.n_verified.toLocaleString()} labels checked · {map.projection.toUpperCase()} layout
             </p>
           </div>
           <div className="flex items-center gap-1">
@@ -345,22 +365,22 @@ export default function FeatureAtlasView({
             </label>
             <div className={`mt-2 grid gap-2 ${kind === "response" ? "grid-cols-2" : "grid-cols-1"}`}>
               <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)}
-                aria-label="Filter atlas by verification status"
+                aria-label="Filter map by label status"
                 className="min-w-0 rounded-lg border border-edge bg-ink px-2 py-2 text-xs text-slate-300 outline-none">
                 <option value="all">All statuses</option>
-                <option value="verified">Fidelity passed</option>
+                <option value="verified">Label checked</option>
                 <option value="named">Named</option>
                 <option value="failed">Failed check</option>
                 <option value="unnamed">Unnamed</option>
               </select>
-              {kind === "response" && <select value={family} onChange={(event) => setFamily(event.target.value as FamilyFilter)}
-                aria-label="Filter atlas by semantic family"
+              {kind === "response" && <select value={family} onChange={(event) => setAnswerType(event.target.value as AnswerTypeFilter)}
+                aria-label="Filter map by answer type"
                 className="min-w-0 rounded-lg border border-edge bg-ink px-2 py-2 text-xs text-slate-300 outline-none">
-                <option value="all">All roles</option>
-                <option value="behavioral">Behavioral</option>
-                <option value="prompt_specific">Prompt-specific</option>
-                <option value="mixed_or_unclear">Mixed</option>
-                <option value="unclassified">Unclassified</option>
+                <option value="all">All answer types</option>
+                <option value="behavioral">Behavior or style</option>
+                <option value="prompt_specific">Prompt or topic</option>
+                <option value="mixed_or_unclear">Mixed or unclear</option>
+                <option value="unclassified">Not classified</option>
               </select>}
             </div>
             <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
@@ -388,8 +408,8 @@ export default function FeatureAtlasView({
                 <span className="text-slate-500">Color by</span>
                 <select value={colorMode} onChange={(event) => setColorMode(event.target.value as ColorMode)}
                   className="rounded-lg border border-edge bg-ink px-2 py-1.5 text-xs text-slate-300 outline-none">
-                  <option value="family">Semantic role</option>
-                  <option value="verification">Verification</option>
+                  <option value="family">Answer type</option>
+                  <option value="verification">Label check</option>
                 </select>
               </div>}
               <span className="text-slate-600">wheel to zoom · drag to pan · click to focus · click again for evidence</span>
@@ -468,8 +488,8 @@ export default function FeatureAtlasView({
             </div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
               {(kind === "prompt" || colorMode === "verification" ? [
-                ["fidelity passed", STATUS_COLORS.verified], ["fidelity failed", STATUS_COLORS.failed],
-                ["not tested", STATUS_COLORS.untested], ["unnamed", STATUS_COLORS.unnamed],
+                ["label checked", STATUS_COLORS.verified], ["label uncertain", STATUS_COLORS.failed],
+                ["not checked", STATUS_COLORS.untested], ["unnamed", STATUS_COLORS.unnamed],
               ] : [
                 ["behavioral", FAMILY_COLORS.behavioral], ["prompt-specific", FAMILY_COLORS.prompt_specific],
                 ["mixed", FAMILY_COLORS.mixed_or_unclear], ["unclassified", FAMILY_COLORS.unclassified],
@@ -484,31 +504,31 @@ export default function FeatureAtlasView({
           <div className="min-w-0 space-y-4">
             <Card>
               <div className="min-w-0">
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{kind === "prompt" ? "Prompt feature" : "Response feature"} {selectedId}</div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{kind === "prompt" ? "Prompt concept" : "Answer concept"} {selectedId}</div>
                 <h3 className="text-lg font-semibold leading-snug text-slate-50"><ConceptLabel id={selectedId} name={selected?.concept} wrap /></h3>
                 <div className="mt-2"><VerifiedBadge pass={selected?.fidelity_pass} n={selected?.fidelity_n} /></div>
               </div>
               {selected?.feature_summary && <p className="mt-3 break-words text-sm leading-relaxed text-slate-400">{selected.feature_summary}</p>}
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                {kind === "response" && <><div><dt className="text-slate-500">Semantic role</dt><dd className="mt-1 text-slate-200">{selected?.semantic_role?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
-                <div><dt className="text-slate-500">Family</dt><dd className="mt-1 text-slate-200">{featureFamily(selected).replace(/_/g, " ")}</dd></div>
-                <div><dt className="text-slate-500">Response prevalence</dt><dd className="mt-1 text-slate-200">{pct(metricRate(selected), 2)}</dd></div></>}
+                {kind === "response" && <><div><dt className="text-slate-500">Answer role</dt><dd className="mt-1 text-slate-200">{selected?.semantic_role?.replace(/_/g, " ") ?? "not classified"}</dd></div>
+                <div><dt className="text-slate-500">Answer type</dt><dd className="mt-1 text-slate-200">{featureFamily(selected).replace(/_/g, " ")}</dd></div>
+                <div><dt className="text-slate-500">Answer share</dt><dd className="mt-1 text-slate-200">{pct(metricRate(selected), 2)}</dd></div></>}
                 <div><dt className="text-slate-500">Decoder norm</dt><dd className="mt-1 font-mono text-slate-200">{selectedPoint.decoder_norm.toFixed(3)}</dd></div>
               </dl>
               {selectedPoint.zero_decoder && <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2 text-xs text-amber-300">This decoder column has zero norm, so its atlas position is only a visibility placeholder.</p>}
               <div className="mt-4 flex flex-wrap gap-2">
                 {onOpenFeature && <button type="button" onClick={() => onOpenFeature(selectedId)} className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent/90"><ExternalLink size={13} />Open {kind === "prompt" ? "prompt context" : "concept report"}</button>}
-                {onOpenCoactivation && <button type="button" onClick={() => onOpenCoactivation(selectedId)} className="inline-flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs text-slate-300 hover:bg-edge/40"><Share2 size={13} />All co-activations</button>}
+                {onOpenCoactivation && <button type="button" onClick={() => onOpenCoactivation(selectedId)} className="inline-flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs text-slate-300 hover:bg-edge/40"><Share2 size={13} />All links</button>}
               </div>
             </Card>
 
             <Card>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-100">Co-activation neighbors</h3>
+                <h3 className="text-sm font-semibold text-slate-100">Often appears with</h3>
                 <span className="text-xs text-slate-500">{pairs.length} retained</span>
               </div>
               {coactivation === undefined ? <SkeletonList n={3} itemClass="h-10" /> : pairs.length === 0 ? (
-                <p className="text-sm text-slate-500">No retained pair for this feature. The export only keeps pairs above its co-occurrence and top-k gates.</p>
+                <p className="text-sm text-slate-500">No saved concept pair for this feature.</p>
               ) : (
                 <div className="space-y-1">
                   {pairs.slice(0, 10).map((pair) => {
