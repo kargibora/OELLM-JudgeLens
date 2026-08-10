@@ -93,7 +93,7 @@ const VIEWS: {
   { id: "coactivation", label: "Co-activation", description: "Concepts that fire together", icon: Share2, requires: "coactivation.json" },
   { id: "models", label: "Models", description: "How each model responds", icon: Bot, requires: "diagnosis.json" },
   { id: "reliability", label: "Reliability", description: "Fidelity, bias, validation", icon: ShieldCheck, group: "Audit" },
-  { id: "atlas", label: "Feature atlas", description: "Explore SAE geometry and evidence", icon: Map, requires: "feature_map.json|map.json|response_map.json|prompt_map.json" },
+  { id: "atlas", label: "Feature atlas", description: "Explore SAE geometry and evidence", icon: Map, requires: "feature_map.json|prompt_feature_map.json|map.json|response_map.json|prompt_map.json" },
 ];
 
 const isView = (x: string): x is ViewId => VIEWS.some((v) => v.id === x);
@@ -627,6 +627,7 @@ export default function App({
                   features={bundle.features}
                   hasLabels={bundle.meta.has_preference ?? true}
                   onOpenFeature={jumpFeature}
+                  onOpenPrompt={jumpPrompt}
                   onOpenCoactivation={(featureId) => {
                     setFocusCell({ pc: -1, cf: featureId });
                     navigate("coactivation");

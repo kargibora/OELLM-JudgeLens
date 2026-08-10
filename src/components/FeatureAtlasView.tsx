@@ -7,8 +7,9 @@ import type {
   Feature,
   FeatureMapData,
   FeatureMapPoint,
+  PromptExample,
 } from "../types";
-import { pct, useFeatureExamples } from "../data";
+import { pct, useFeatureExamples, usePromptExamples } from "../data";
 import {
   Card,
   ConceptLabel,
@@ -108,6 +109,47 @@ function AtlasExamples({ fid, concept }: { fid: number; concept: string }) {
   );
 }
 
+function PromptAtlasExamples({ fid, concept }: { fid: number; concept: string }) {
+  const raw = usePromptExamples(fid);
+  const examples = useMemo(
+    () => (raw ?? []).slice().sort((a: PromptExample, b: PromptExample) => b.z - a.z).slice(0, 8),
+    [raw],
+  );
+  if (raw === undefined)
+    return <Card><SkeletonList n={3} itemClass="h-20" /></Card>;
+  return (
+    <Card>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-slate-100">Strongest prompt examples</h3>
+        <span className="text-xs text-slate-500">{examples.length} shown</span>
+      </div>
+      {raw === null ? (
+        <p className="text-sm text-slate-500">No prompt examples were exported for {concept}.</p>
+      ) : examples.length === 0 ? (
+        <p className="text-sm text-slate-500">
+          This axis has no positive activation in the prompt corpus. No unrelated example is substituted.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {examples.map((example, index) => (
+            <details key={index} className="group rounded-xl border border-edge/70 bg-ink/40 p-3">
+              <summary className="cursor-pointer list-none text-sm text-slate-300">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <span className="line-clamp-2 min-w-0">{clip(example.prompt, 260)}</span>
+                  <span className="shrink-0 font-mono text-xs text-accent-soft">z +{example.z.toFixed(2)}</span>
+                </div>
+              </summary>
+              <p className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap border-t border-edge/60 pt-3 text-sm leading-relaxed text-slate-300">
+                {example.prompt}
+              </p>
+            </details>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function metricRate(feature: Feature | undefined) {
   return feature?.semantic_presence_rate ?? feature?.generality ?? feature?.fire_rate;
 }
@@ -116,12 +158,14 @@ export default function FeatureAtlasView({
   map,
   features,
   coactivation,
+  kind = "response",
   onOpenFeature,
   onOpenCoactivation,
 }: {
   map: FeatureMapData | null;
   features: Feature[];
   coactivation: ConceptCoactivation | null | undefined;
+  kind?: "response" | "prompt";
   onOpenFeature?: (featureId: number) => void;
   onOpenCoactivation?: (featureId: number) => void;
 }) {
@@ -139,7 +183,7 @@ export default function FeatureAtlasView({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [family, setFamily] = useState<FamilyFilter>("all");
-  const [colorMode, setColorMode] = useState<ColorMode>("family");
+  const [colorMode, setColorMode] = useState<ColorMode>(kind === "prompt" ? "verification" : "family");
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
 
   const projected = useMemo(() => {
@@ -174,7 +218,7 @@ export default function FeatureAtlasView({
     if (status === "named" && featureStatus === "unnamed") return false;
     if (status === "failed" && featureStatus !== "failed") return false;
     if (status === "unnamed" && featureStatus !== "unnamed") return false;
-    if (family !== "all" && featureFamily(feature) !== family) return false;
+    if (kind === "response" && family !== "all" && featureFamily(feature) !== family) return false;
     return true;
   };
   const queryMatch = (point: FeatureMapPoint) => {
@@ -252,16 +296,17 @@ export default function FeatureAtlasView({
   return (
     <div className="space-y-4">
       <Explain>
-        Every dot is one SAE feature. Position is a UMAP of decoder directions using cosine
-        distance; names do not determine geometry. Click a feature to inspect its strongest
-        examples. Lines show observed response co-activation and are a separate dataset-level
-        association, not proof that either label is present or causal.
+        Every dot is one {kind === "prompt" ? "prompt" : "response"} SAE feature. Position is a
+        UMAP of decoder directions using cosine distance; names do not determine geometry.
+        Click a feature to inspect its strongest examples. Lines show observed {kind === "prompt" ? "prompt" : "response"}
+        co-activation and are a separate corpus-level association, not proof that either
+        label is present or causal.
       </Explain>
 
       <Card>
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-50">SAE feature atlas</h2>
+            <h2 className="text-lg font-semibold text-slate-50">{kind === "prompt" ? "Prompt feature atlas" : "Response feature atlas"}</h2>
             <p className="mt-1 text-xs text-slate-500">
               {map.n_total.toLocaleString()} / {map.n_total.toLocaleString()} axes plotted · {map.n_named.toLocaleString()} named · {map.n_verified.toLocaleString()} verified · {map.projection.toUpperCase()} ({map.metric})
             </p>
@@ -281,7 +326,7 @@ export default function FeatureAtlasView({
                 placeholder="Search name or feature ID…" aria-label="Search feature atlas"
                 className="w-full rounded-lg border border-edge bg-ink py-2 pl-8 pr-2 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-accent/60" />
             </label>
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className={`mt-2 grid gap-2 ${kind === "response" ? "grid-cols-2" : "grid-cols-1"}`}>
               <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)}
                 aria-label="Filter atlas by verification status"
                 className="min-w-0 rounded-lg border border-edge bg-ink px-2 py-2 text-xs text-slate-300 outline-none">
@@ -291,7 +336,7 @@ export default function FeatureAtlasView({
                 <option value="failed">Failed check</option>
                 <option value="unnamed">Unnamed</option>
               </select>
-              <select value={family} onChange={(event) => setFamily(event.target.value as FamilyFilter)}
+              {kind === "response" && <select value={family} onChange={(event) => setFamily(event.target.value as FamilyFilter)}
                 aria-label="Filter atlas by semantic family"
                 className="min-w-0 rounded-lg border border-edge bg-ink px-2 py-2 text-xs text-slate-300 outline-none">
                 <option value="all">All roles</option>
@@ -299,7 +344,7 @@ export default function FeatureAtlasView({
                 <option value="prompt_specific">Prompt-specific</option>
                 <option value="mixed_or_unclear">Mixed</option>
                 <option value="unclassified">Unclassified</option>
-              </select>
+              </select>}
             </div>
             <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
               <span>{listed.length.toLocaleString()} matches</span>
@@ -322,14 +367,14 @@ export default function FeatureAtlasView({
 
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2">
+              {kind === "response" && <div className="flex items-center gap-2">
                 <span className="text-slate-500">Color by</span>
                 <select value={colorMode} onChange={(event) => setColorMode(event.target.value as ColorMode)}
                   className="rounded-lg border border-edge bg-ink px-2 py-1.5 text-xs text-slate-300 outline-none">
                   <option value="family">Semantic role</option>
                   <option value="verification">Verification</option>
                 </select>
-              </div>
+              </div>}
               <span className="text-slate-600">wheel to zoom · drag to pan · click to inspect</span>
             </div>
             <div className="relative overflow-hidden rounded-xl border border-edge/80 bg-[#080b12]">
@@ -402,12 +447,12 @@ export default function FeatureAtlasView({
               })()}
             </div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-              {(colorMode === "family" ? [
-                ["behavioral", FAMILY_COLORS.behavioral], ["prompt-specific", FAMILY_COLORS.prompt_specific],
-                ["mixed", FAMILY_COLORS.mixed_or_unclear], ["unclassified", FAMILY_COLORS.unclassified],
-              ] : [
+              {(kind === "prompt" || colorMode === "verification" ? [
                 ["verified", STATUS_COLORS.verified], ["failed check", STATUS_COLORS.failed],
                 ["not tested", STATUS_COLORS.untested], ["unnamed", STATUS_COLORS.unnamed],
+              ] : [
+                ["behavioral", FAMILY_COLORS.behavioral], ["prompt-specific", FAMILY_COLORS.prompt_specific],
+                ["mixed", FAMILY_COLORS.mixed_or_unclear], ["unclassified", FAMILY_COLORS.unclassified],
               ]).map(([label, color]) => <span key={label} className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: color }} />{label}</span>)}
             </div>
           </div>
@@ -420,21 +465,22 @@ export default function FeatureAtlasView({
             <Card>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Feature {selectedId}</div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{kind === "prompt" ? "Prompt feature" : "Response feature"} {selectedId}</div>
                   <h3 className="text-lg font-semibold leading-snug text-slate-50"><ConceptLabel id={selectedId} name={selected?.concept} wrap /></h3>
                 </div>
                 <VerifiedBadge pass={selected?.fidelity_pass} n={selected?.fidelity_n} />
               </div>
               {selected?.feature_summary && <p className="mt-3 break-words text-sm leading-relaxed text-slate-400">{selected.feature_summary}</p>}
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                <div><dt className="text-slate-500">Semantic role</dt><dd className="mt-1 text-slate-200">{selected?.semantic_role?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
+                {kind === "response" && <><div><dt className="text-slate-500">Semantic role</dt><dd className="mt-1 text-slate-200">{selected?.semantic_role?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
                 <div><dt className="text-slate-500">Family</dt><dd className="mt-1 text-slate-200">{featureFamily(selected).replace(/_/g, " ")}</dd></div>
-                <div><dt className="text-slate-500">Response prevalence</dt><dd className="mt-1 text-slate-200">{pct(metricRate(selected), 2)}</dd></div>
+                <div><dt className="text-slate-500">Response prevalence</dt><dd className="mt-1 text-slate-200">{pct(metricRate(selected), 2)}</dd></div></>}
+                {kind === "prompt" && <div><dt className="text-slate-500">Verification</dt><dd className="mt-1 text-slate-200">{selected?.fidelity_pass === true ? "passed" : selected?.fidelity_pass === false ? "did not pass" : "not tested"}</dd></div>}
                 <div><dt className="text-slate-500">Decoder norm</dt><dd className="mt-1 font-mono text-slate-200">{selectedPoint.decoder_norm.toFixed(3)}</dd></div>
               </dl>
               {selectedPoint.zero_decoder && <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2 text-xs text-amber-300">This decoder column has zero norm, so its atlas position is only a visibility placeholder.</p>}
               <div className="mt-4 flex flex-wrap gap-2">
-                {onOpenFeature && <button type="button" onClick={() => onOpenFeature(selectedId)} className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent/90"><ExternalLink size={13} />Open concept report</button>}
+                {onOpenFeature && <button type="button" onClick={() => onOpenFeature(selectedId)} className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-white hover:bg-accent/90"><ExternalLink size={13} />Open {kind === "prompt" ? "prompt context" : "concept report"}</button>}
                 {onOpenCoactivation && <button type="button" onClick={() => onOpenCoactivation(selectedId)} className="inline-flex items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs text-slate-300 hover:bg-edge/40"><Share2 size={13} />All co-activations</button>}
               </div>
             </Card>
@@ -463,7 +509,9 @@ export default function FeatureAtlasView({
               )}
             </Card>
           </div>
-          <AtlasExamples fid={selectedId} concept={selectedName} />
+          {kind === "prompt"
+            ? <PromptAtlasExamples fid={selectedId} concept={selectedName} />
+            : <AtlasExamples fid={selectedId} concept={selectedName} />}
         </div>
       )}
     </div>

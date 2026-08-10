@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type { Coactivation, ConditionalBundle, ConditionalData, ElicitationData, PromptFeatures, ReportBattles } from "../types";
 import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, Segmented, clip, divergeColor, WINRATE_REF } from "./ui";
-import { pct } from "../data";
+import { pct, usePromptExamples } from "../data";
 import JointEvidence from "./JointEvidence";
 
 // Prompt-first browser: pick a prompt concept and read, on one page, what responses it
@@ -278,6 +278,7 @@ export default function PromptBrowser({
                   : "interpreted prompt-lens axis"}
               </p>
             </Card>
+            {!clustered && <PromptExamplesPanel featureId={sel} />}
             {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} onJumpFeature={onJumpFeature} />}
             {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
             {/* report_battles keys concepts by their raw name (bare id string when unnamed),
@@ -288,6 +289,42 @@ export default function PromptBrowser({
         )}
       </div>
     </div>
+  );
+}
+
+function PromptExamplesPanel({ featureId }: { featureId: number }) {
+  const examples = usePromptExamples(featureId);
+  if (examples === undefined)
+    return <Card><p className="text-sm text-slate-500">Loading top-activating prompts…</p></Card>;
+  return (
+    <Card>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h4 className="text-sm font-semibold text-slate-200">Top-activating prompts</h4>
+        <span className="text-xs text-slate-500">{examples?.length ?? 0} shown</span>
+      </div>
+      {examples === null ? (
+        <p className="text-sm text-slate-500">Prompt examples were not included in this bundle.</p>
+      ) : examples.length === 0 ? (
+        <p className="text-sm text-slate-500">
+          This axis has no positive activation in the exported prompt corpus. No unrelated
+          example is substituted.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {examples.slice(0, 6).map((example, index) => (
+            <details key={index} className="group rounded-lg border border-edge/70 bg-ink/35 px-3 py-2">
+              <summary className="cursor-pointer list-none text-sm text-slate-300">
+                <span className="line-clamp-2">{clip(example.prompt, 260)}</span>
+                <span className="mt-1 block font-mono text-[10px] text-accent-soft">prompt z +{example.z.toFixed(2)}</span>
+              </summary>
+              <p className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap border-t border-edge/60 pt-2 text-sm leading-relaxed text-slate-300">
+                {example.prompt}
+              </p>
+            </details>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

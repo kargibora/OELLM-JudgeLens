@@ -4,6 +4,7 @@ import type {
   Feature,
   FeatureMapData,
   MapData,
+  PromptFeatures,
   PromptMapData,
   ResponseMapData,
 } from "../types";
@@ -14,9 +15,10 @@ import MapView from "./MapView";
 import ResponseMapView from "./ResponseMapView";
 import PromptMapView from "./PromptMapView";
 
-type Sub = "features" | "responses" | "battle" | "prompt";
+type Sub = "features" | "promptFeatures" | "responses" | "battle" | "prompt";
 const SUBS: { id: Sub; label: string; artifact: string }[] = [
-  { id: "features", label: "Feature atlas", artifact: "feature_map.json" },
+  { id: "features", label: "Response feature atlas", artifact: "feature_map.json" },
+  { id: "promptFeatures", label: "Prompt feature atlas", artifact: "prompt_feature_map.json" },
   { id: "responses", label: "Response scatter", artifact: "response_map.json" },
   { id: "battle", label: "Battle scatter", artifact: "map.json" },
   { id: "prompt", label: "Prompt scatter", artifact: "prompt_map.json" },
@@ -28,12 +30,14 @@ export default function MapsTab({
   features,
   onJump,
   onOpenFeature,
+  onOpenPrompt,
   onOpenCoactivation,
   hasLabels = true,
 }: {
   features: Feature[];
   onJump: (pc: number, cf: number) => void;
   onOpenFeature?: (featureId: number) => void;
+  onOpenPrompt?: (featureId: number) => void;
   onOpenCoactivation?: (featureId: number) => void;
   hasLabels?: boolean;
 }) {
@@ -66,6 +70,11 @@ export default function MapsTab({
             onOpenCoactivation={onOpenCoactivation} />
         </div>
       )}
+      {visited.current.has("promptFeatures") && available.some((item) => item.id === "promptFeatures") && (
+        <div hidden={sub !== "promptFeatures"}>
+          <PromptFeatureAtlasPane onOpenPrompt={onOpenPrompt} />
+        </div>
+      )}
       {visited.current.has("responses") && available.some((item) => item.id === "responses") && (
         <div hidden={sub !== "responses"}><ResponseMapPane /></div>
       )}
@@ -79,6 +88,17 @@ export default function MapsTab({
       )}
     </div>
   );
+}
+
+function PromptFeatureAtlasPane({ onOpenPrompt }: { onOpenPrompt?: (featureId: number) => void }) {
+  const map = useMap<FeatureMapData>("prompt_feature_map.json");
+  const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
+  const coactivation = useDataArtifact<ConceptCoactivation>("prompt_coactivation.json");
+  if (map === undefined || promptFeatures === undefined || coactivation === undefined)
+    return <Loading what="prompt feature atlas" />;
+  const features: Feature[] = (promptFeatures?.features ?? []).map((feature) => ({ ...feature }));
+  return <FeatureAtlasView kind="prompt" map={map} features={features}
+    coactivation={coactivation} onOpenFeature={onOpenPrompt} />;
 }
 
 function Loading({ what }: { what: string }) {

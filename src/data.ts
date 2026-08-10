@@ -8,6 +8,7 @@ import type {
   FeatureMapData,
   MapData,
   PromptMapData,
+  PromptExample,
   ResponseMapData,
 } from "./types";
 import { BUNDLE_SCHEMA_VERSION } from "./types";
@@ -241,6 +242,11 @@ export function useFeatureExamples(fid: number | null | undefined): Example[] | 
     return () => { live = false; };
   }, [client, fid, shard]);
   return shard === null ? legacy : shard;
+}
+
+export function usePromptExamples(fid: number | null | undefined): PromptExample[] | null | undefined {
+  const name = fid == null ? null : `prompt_examples/${fid}.json`;
+  return useDataArtifact<PromptExample[]>(name);
 }
 
 export function useMap<T = FeatureMapData | MapData | PromptMapData | ResponseMapData>(name: string): T | null | undefined {

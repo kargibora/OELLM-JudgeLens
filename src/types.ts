@@ -314,6 +314,11 @@ export interface PromptFeatures {
   features: PromptFeature[];
 }
 
+export interface PromptExample {
+  z: number;
+  prompt: string;
+}
+
 // --- conditional δ_{f,k}: behavior win-relevance WITHIN each prompt type ---
 export interface CondCell {
   pc: number; // prompt concept/type id
