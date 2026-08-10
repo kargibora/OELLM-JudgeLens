@@ -181,6 +181,7 @@ export default function FeatureAtlasView({
   } | null>(null);
   const byId = useMemo(() => new Map(features.map((feature) => [feature.feature_id, feature])), [features]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [armedId, setArmedId] = useState<number | null>(null);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -270,9 +271,16 @@ export default function FeatureAtlasView({
       y: HEIGHT / 2 - point.py * current.k,
     }));
   };
-  const inspectAndCentre = (featureId: number) => {
+  const focusAndArm = (featureId: number) => {
     selectAndCentre(featureId);
-    onInspectFeature?.(featureId);
+    setArmedId(featureId);
+  };
+  const activateFeature = (featureId: number) => {
+    if (selectedId === featureId && armedId === featureId) {
+      onInspectFeature?.(featureId);
+      return;
+    }
+    focusAndArm(featureId);
   };
   const reset = () => setTransform({ x: 0, y: 0, k: 1 });
   const zoomBy = (factor: number) => setTransform((current) => {
@@ -304,7 +312,8 @@ export default function FeatureAtlasView({
       <Explain>
         Every dot is one {kind === "prompt" ? "prompt" : "response"} SAE feature. Position is a
         UMAP of decoder directions using cosine distance; names do not determine geometry.
-        Click a feature to inspect its strongest examples. Lines show observed {kind === "prompt" ? "prompt" : "response"}{" "}
+        Click a feature once to focus it and reveal its co-activation graph; click the
+        selected feature again to open the evidence drawer. Lines show observed {kind === "prompt" ? "prompt" : "response"}{" "}
         co-activation and are a separate corpus-level association, not proof that either
         label is present or causal.
       </Explain>
@@ -360,7 +369,7 @@ export default function FeatureAtlasView({
               {listed.length === 0 ? <p className="py-6 text-center text-xs text-slate-500">No matching feature.</p> : listed.map((point) => {
                 const feature = byId.get(point.feature_id);
                 return (
-                  <button key={point.feature_id} type="button" onClick={() => inspectAndCentre(point.feature_id)}
+                  <button key={point.feature_id} type="button" onClick={() => activateFeature(point.feature_id)}
                     className={`flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition ${selectedId === point.feature_id ? "bg-accent/15 ring-1 ring-inset ring-accent/35" : "hover:bg-edge/40"}`}>
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: colorOf(point) }} />
                     <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{conceptLabel(point.feature_id, feature?.concept)}</span>
@@ -381,7 +390,7 @@ export default function FeatureAtlasView({
                   <option value="verification">Verification</option>
                 </select>
               </div>}
-              <span className="text-slate-600">wheel to zoom · drag to pan · click to inspect</span>
+              <span className="text-slate-600">wheel to zoom · drag to pan · click to focus · click again for evidence</span>
             </div>
             <div className="relative overflow-hidden rounded-xl border border-edge/80 bg-[#080b12]">
               <svg ref={svgRef} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img"
@@ -435,9 +444,9 @@ export default function FeatureAtlasView({
                         tabIndex={point.feature_id === selectedId ? 0 : -1}
                         onMouseEnter={() => setHoveredId(point.feature_id)}
                         onMouseLeave={() => setHoveredId(null)}
-                        onClick={(event) => { event.stopPropagation(); inspectAndCentre(point.feature_id); }}
-                        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspectAndCentre(point.feature_id); } }}>
-                        <title>{conceptLabel(point.feature_id, byId.get(point.feature_id)?.concept)} · feature {point.feature_id}</title>
+                        onClick={(event) => { event.stopPropagation(); activateFeature(point.feature_id); }}
+                        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activateFeature(point.feature_id); } }}>
+                        <title>{conceptLabel(point.feature_id, byId.get(point.feature_id)?.concept)} · feature {point.feature_id} · click again for evidence</title>
                       </circle>
                     );
                   })}
@@ -449,6 +458,9 @@ export default function FeatureAtlasView({
                 return <div className="pointer-events-none absolute left-3 top-3 max-w-[min(75%,32rem)] rounded-lg border border-edge bg-ink/90 px-3 py-2 text-xs shadow-xl">
                   <div className="font-medium text-slate-100">{conceptLabel(fid, feature?.concept)}</div>
                   <div className="mt-0.5 text-slate-500">feature {fid} · {featureFamily(feature).replace(/_/g, " ")}</div>
+                  {fid === selectedId && fid === armedId && (
+                    <div className="mt-1 font-medium text-accent-soft">selected · click again to open evidence</div>
+                  )}
                 </div>;
               })()}
             </div>
@@ -503,7 +515,7 @@ export default function FeatureAtlasView({
                   {pairs.slice(0, 10).map((pair) => {
                     const other = pair.a === selectedId ? pair.b : pair.a;
                     const feature = byId.get(other);
-                    return <button key={`${pair.a}-${pair.b}`} type="button" onClick={() => selectAndCentre(other)}
+                    return <button key={`${pair.a}-${pair.b}`} type="button" onClick={() => focusAndArm(other)}
                       className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-edge/40">
                       <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{conceptLabel(other, feature?.concept)}</span>
                       <span className="shrink-0 font-mono text-[10px] text-slate-600">#{other}</span>

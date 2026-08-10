@@ -87,6 +87,7 @@ export default function ClusterExplorer({
     clusters.clusters[0]?.cluster_id ?? null,
   );
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
+  const [armedFeatureId, setArmedFeatureId] = useState<number | null>(null);
 
   const featureById = useMemo(() => {
     const result = new Map<number, Feature>();
@@ -168,10 +169,14 @@ export default function ClusterExplorer({
   const selectPoint = (featureId: number) => {
     const clusterId = clusterOfFeature.get(featureId);
     if (clusterId == null) return;
+    if (selectedFeatureId === featureId && armedFeatureId === featureId) {
+      onInspectFeature?.(featureId);
+      return;
+    }
     setSelectedClusterId(clusterId);
     setSelectedFeatureId(featureId);
+    setArmedFeatureId(featureId);
     setMemberQuery("");
-    onInspectFeature?.(featureId);
   };
 
   const stability = diagnosticNumber(clusters.diagnostics, "seed_ari_mean");
@@ -302,13 +307,13 @@ export default function ClusterExplorer({
                           className={pointCluster == null ? "" : "cursor-pointer"}
                           onClick={() => selectPoint(point.feature_id)}
                         >
-                          <title>{conceptLabel(point.feature_id, featureById.get(point.feature_id)?.concept)} · community {pointCluster ?? "unassigned"}</title>
+                          <title>{conceptLabel(point.feature_id, featureById.get(point.feature_id)?.concept)} · community {pointCluster ?? "unassigned"} · click again for evidence</title>
                         </circle>
                       );
                     })}
                   </svg>
                   <div className="border-t border-edge/70 px-3 py-2 text-[11px] text-slate-500">
-                    Bright points are this community. Click any colored point to open its community and member evidence.
+                    Bright points are this community. Click a point to select its feature; click it again to open the evidence drawer.
                   </div>
                 </div>
               )}
@@ -334,7 +339,7 @@ export default function ClusterExplorer({
                   <button
                     key={feature.feature_id}
                     type="button"
-                    onClick={() => setSelectedFeatureId(feature.feature_id)}
+                    onClick={() => { setSelectedFeatureId(feature.feature_id); setArmedFeatureId(feature.feature_id); }}
                     className={`flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left ${
                       feature.feature_id === selectedFeatureId
                         ? "bg-accent/15 ring-1 ring-inset ring-accent/30"

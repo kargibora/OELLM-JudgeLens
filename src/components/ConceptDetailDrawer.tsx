@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
 import type { ConceptCoactivation, ElicitationData, Example, Feature } from "../types";
 import { pct, useDataArtifact, useFeatureExamples } from "../data";
-import { Card, ConceptLabel, VerifiedBadge, clip, conceptLabel } from "./ui";
+import { Card, clip, conceptLabel } from "./ui";
 import JointEvidence from "./JointEvidence";
 import CoactivationPairEvidence from "./CoactivationPairEvidence";
+import FeatureDetailDrawerShell from "./FeatureDetailDrawerShell";
 
 export default function ConceptDetailDrawer({
   featureId,
@@ -24,16 +24,6 @@ export default function ConceptDetailDrawer({
   const [activePair, setActivePair] = useState<string | null>(null);
   const [activePrompt, setActivePrompt] = useState<number | null>(null);
 
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
   useEffect(() => { setActivePair(null); setActivePrompt(null); }, [featureId]);
 
   const pairs = useMemo(() => (coactivation?.pairs ?? [])
@@ -60,38 +50,23 @@ export default function ConceptDetailDrawer({
   }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 5), [examples]);
 
   return (
-    <div className="fixed inset-0 z-[80] flex justify-end bg-black/65 backdrop-blur-sm"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <aside role="dialog" aria-modal="true" aria-label={`Concept ${featureId} details`}
-        className="h-full w-full max-w-3xl overflow-y-auto border-l border-edge bg-[#0b101a] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-edge bg-[#0b101a]/95 px-5 py-4 backdrop-blur">
-          <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Response feature {featureId}</div>
-            <h2 className="mt-1 text-xl font-semibold leading-snug text-slate-50"><ConceptLabel id={featureId} name={feature?.concept} wrap /></h2>
-          </div>
-          <button type="button" onClick={onClose} autoFocus aria-label="Close concept details"
-            className="icon-button grid shrink-0"><X size={18} /></button>
-        </div>
-
-        <div className="space-y-4 p-5">
-          <Card>
-            <div className="flex items-start justify-between gap-4">
-              <p className="max-w-xl text-sm leading-relaxed text-slate-400">
-                {feature?.feature_summary || "LLM-assigned concept label. Inspect the activation evidence before treating it as a semantic claim."}
-              </p>
-              <VerifiedBadge pass={feature?.fidelity_pass} n={feature?.fidelity_n} />
-            </div>
-            <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-              <div><dt className="text-slate-500">Prevalence</dt><dd className="mt-1 text-slate-200">{pct(feature?.semantic_presence_rate ?? feature?.generality ?? feature?.fire_rate, 2)}</dd></div>
-              <div><dt className="text-slate-500">Semantic family</dt><dd className="mt-1 text-slate-200">{feature?.semantic_family?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
-              <div><dt className="text-slate-500">Behavior scope</dt><dd className="mt-1 text-slate-200">{feature?.behavior_category?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
-              <div><dt className="text-slate-500">Fidelity agreement</dt><dd className="mt-1 text-slate-200">{pct(feature?.agreement, 0)}</dd></div>
-            </dl>
-          </Card>
+    <FeatureDetailDrawerShell kind="response" featureId={featureId} feature={feature} onClose={onClose}>
+      <Card className="overflow-hidden bg-gradient-to-br from-panel/90 to-ink/60">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Interpretation</div>
+        <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-slate-300">
+          {feature?.feature_summary || "LLM-assigned concept label. Inspect the activation evidence before treating it as a semantic claim."}
+        </p>
+        <dl className="mt-5 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Prevalence</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.semantic_presence_rate ?? feature?.generality ?? feature?.fire_rate, 2)}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Semantic family</dt><dd className="mt-1 text-sm text-slate-200">{feature?.semantic_family?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Behavior scope</dt><dd className="mt-1 text-sm text-slate-200">{feature?.behavior_category?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Fidelity agreement</dt><dd className="mt-1 text-sm font-medium text-slate-100">{pct(feature?.agreement, 0)}</dd></div>
+        </dl>
+      </Card>
 
           <Card>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-slate-100">Strongest activation examples</h3>
+              <div><div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Activation evidence</div><h3 className="mt-1 text-base font-semibold text-slate-100">Strongest corpus examples</h3></div>
               <span className="text-xs text-slate-500">{ownExamples.length} shown</span>
             </div>
             {examples === undefined ? <p className="text-sm text-slate-500">Loading examples…</p>
@@ -111,8 +86,9 @@ export default function ConceptDetailDrawer({
           </Card>
 
           <Card>
-            <h3 className="text-sm font-semibold text-slate-100">Co-activation neighbors</h3>
-            <p className="mb-3 mt-1 text-xs text-slate-500">Observed on the same responses; descriptive, not causal.</p>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Response relationships</div>
+            <h3 className="mt-1 text-base font-semibold text-slate-100">Co-activation neighbors</h3>
+            <p className="mb-3 mt-1 text-xs leading-relaxed text-slate-500">Features observed on the same responses more often than independence predicts. Open evidence to inspect both activations.</p>
             {pairs.length === 0 ? <p className="text-sm text-slate-500">No retained co-activation pair.</p>
               : <div className="space-y-1">{pairs.map((pair) => {
                 const other = pair.a === featureId ? pair.b : pair.a;
@@ -131,7 +107,8 @@ export default function ConceptDetailDrawer({
           </Card>
 
           <Card>
-            <h3 className="text-sm font-semibold text-slate-100">Activated by these prompts</h3>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prompt relationships</div>
+            <h3 className="mt-1 text-base font-semibold text-slate-100">Activated by these prompts</h3>
             <p className="mb-3 mt-1 text-xs text-slate-500">Prompt→response co-activation; significant edges are listed first.</p>
             {promptEdges.length === 0 ? <p className="text-sm text-slate-500">No retained positive prompt linkage for this feature.</p>
               : <div className="space-y-1">{promptEdges.map((edge) => <button key={edge.px} type="button" onClick={() => setActivePrompt(edge.px)}
@@ -143,8 +120,6 @@ export default function ConceptDetailDrawer({
           </Card>
           {activePrompt != null && <JointEvidence promptFeature={activePrompt} responseFeature={featureId}
             promptName={promptNames.get(activePrompt)} responseName={feature?.concept ?? null} kind="elicitation" />}
-        </div>
-      </aside>
-    </div>
+    </FeatureDetailDrawerShell>
   );
 }
