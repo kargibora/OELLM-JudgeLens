@@ -16,10 +16,14 @@ import {
   Explain,
   SkeletonList,
   VerifiedBadge,
-  clip,
   conceptLabel,
   isUnnamed,
 } from "./ui";
+import {
+  ActivationEvidenceCard,
+  ExampleGroupSelect,
+  activationDomain,
+} from "./ActivationEvidence";
 
 type StatusFilter = "all" | "verified" | "named" | "failed" | "unnamed";
 type FamilyFilter = "all" | "behavioral" | "prompt_specific" | "mixed_or_unclear" | "unclassified";
@@ -57,94 +61,92 @@ const statusOf = (feature: Feature | undefined) => {
   return "untested" as const;
 };
 
-export function AtlasExamples({ fid, concept }: { fid: number; concept: string }) {
+export function AtlasExamples({ fid, concept, initialGroup = "" }: { fid: number; concept: string; initialGroup?: string }) {
   const raw = useFeatureExamples(fid);
+  const [group, setGroup] = useState(initialGroup);
+  useEffect(() => { setGroup(initialGroup); }, [fid, initialGroup]);
   const paired = useMemo(() => (raw ?? []).some((row) => Boolean(row.completion_b)), [raw]);
-  const examples = useMemo(() => (raw ?? []).map((row: Example) => {
+  const allExamples = useMemo(() => (raw ?? []).map((row: Example) => {
     const aSide = row.z >= 0;
     return {
       z: row.z,
       prompt: row.prompt,
       model: paired ? (aSide ? row.model_a : row.model_b) : row.model_a,
       response: paired ? (aSide ? row.completion_a : row.completion_b) : row.completion_a,
+      group: row.group,
+      groupColumn: row.group_column,
     };
-  }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 6), [raw, paired]);
+  }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)), [raw, paired]);
+  const groups = useMemo(() => [...new Set(allExamples.map((row) => row.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
+  const examples = useMemo(() => allExamples.filter((row) => !group || row.group === group).slice(0, 6), [allExamples, group]);
+  const domain = useMemo(() => activationDomain(allExamples.map((row) => row.z)), [allExamples]);
+  const groupColumn = allExamples.find((row) => row.groupColumn)?.groupColumn ?? "language";
+  const missingGroupMetadata = Boolean(group && raw && groups.length === 0);
 
   if (raw === undefined)
     return <Card><SkeletonList n={3} itemClass="h-24" /></Card>;
 
   return (
     <Card>
-      <div className="mb-3 flex items-baseline justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-slate-100">Strongest corpus examples</h3>
-        <span className="text-xs text-slate-500">{examples.length} shown</span>
+        <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /><span className="text-xs text-slate-500">{examples.length} shown</span></div>
       </div>
       {examples.length === 0 ? (
         <p className="text-sm text-slate-500">
-          No text example was exported for {concept}. Re-export with <code>--corpus</code>.
+          {missingGroupMetadata
+            ? `This older example shard has no ${groupColumn} metadata. Re-export it to filter evidence.`
+            : group
+              ? `No retained ${groupColumn}=${group} example for ${concept}.`
+              : <>No text example was exported for {concept}. Re-export with <code>--corpus</code>.</>}
         </p>
       ) : (
-        <div className="space-y-2">
-          {examples.map((example, index) => (
-            <details key={index} className="group rounded-xl border border-edge/70 bg-ink/40 p-3">
-              <summary className="cursor-pointer list-none text-sm text-slate-300">
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <span className="line-clamp-2 min-w-0">{clip(example.prompt, 240)}</span>
-                  <span className="shrink-0 font-mono text-xs text-accent-soft">
-                    {paired ? "contrast" : "activation"} {example.z >= 0 ? "+" : ""}{example.z.toFixed(2)}
-                  </span>
-                </div>
-              </summary>
-              <div className="mt-3 border-t border-edge/60 pt-3">
-                {example.model && <div className="mb-1 text-[11px] text-slate-500">{example.model}</div>}
-                <p className="max-h-72 overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
-                  {example.response || "—"}
-                </p>
-              </div>
-            </details>
-          ))}
-        </div>
+        <div className="space-y-2">{examples.map((example, index) => (
+          <ActivationEvidenceCard key={index} prompt={example.prompt} response={example.response}
+            value={example.z} min={domain.min} max={domain.max}
+            label={paired ? "A−B contrast" : "Activation"} model={example.model} />
+        ))}</div>
       )}
     </Card>
   );
 }
 
-export function PromptAtlasExamples({ fid, concept }: { fid: number; concept: string }) {
+export function PromptAtlasExamples({ fid, concept, initialGroup = "" }: { fid: number; concept: string; initialGroup?: string }) {
   const raw = usePromptExamples(fid);
-  const examples = useMemo(
-    () => (raw ?? []).slice().sort((a: PromptExample, b: PromptExample) => b.z - a.z).slice(0, 8),
+  const [group, setGroup] = useState(initialGroup);
+  useEffect(() => { setGroup(initialGroup); }, [fid, initialGroup]);
+  const allExamples = useMemo(
+    () => (raw ?? []).slice().sort((a: PromptExample, b: PromptExample) => b.z - a.z),
     [raw],
   );
+  const groups = useMemo(() => [...new Set(allExamples.map((row) => row.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
+  const examples = useMemo(() => allExamples.filter((row) => !group || row.group === group).slice(0, 8), [allExamples, group]);
+  const domain = useMemo(() => activationDomain(allExamples.map((row) => row.z)), [allExamples]);
+  const groupColumn = allExamples.find((row) => row.group_column)?.group_column ?? "language";
+  const missingGroupMetadata = Boolean(group && raw && groups.length === 0);
   if (raw === undefined)
     return <Card><SkeletonList n={3} itemClass="h-20" /></Card>;
   return (
     <Card>
-      <div className="mb-3 flex items-baseline justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-slate-100">Strongest prompt examples</h3>
-        <span className="text-xs text-slate-500">{examples.length} shown</span>
+        <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /><span className="text-xs text-slate-500">{examples.length} shown</span></div>
       </div>
       {raw === null ? (
         <p className="text-sm text-slate-500">No prompt examples were exported for {concept}.</p>
       ) : examples.length === 0 ? (
         <p className="text-sm text-slate-500">
-          This axis has no positive activation in the prompt corpus. No unrelated example is substituted.
+          {missingGroupMetadata
+            ? `This older example shard has no ${groupColumn} metadata. Re-export it to filter evidence.`
+            : group
+              ? `No retained ${groupColumn}=${group} prompt for this axis.`
+              : "This axis has no positive activation in the prompt corpus. No unrelated example is substituted."}
         </p>
       ) : (
-        <div className="space-y-2">
-          {examples.map((example, index) => (
-            <details key={index} className="group rounded-xl border border-edge/70 bg-ink/40 p-3">
-              <summary className="cursor-pointer list-none text-sm text-slate-300">
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <span className="line-clamp-2 min-w-0">{clip(example.prompt, 260)}</span>
-                  <span className="shrink-0 font-mono text-xs text-accent-soft">z +{example.z.toFixed(2)}</span>
-                </div>
-              </summary>
-              <p className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap border-t border-edge/60 pt-3 text-sm leading-relaxed text-slate-300">
-                {example.prompt}
-              </p>
-            </details>
-          ))}
-        </div>
+        <div className="space-y-2">{examples.map((example, index) => (
+          <ActivationEvidenceCard key={index} prompt={example.prompt} value={example.z}
+            min={domain.min} max={domain.max} />
+        ))}</div>
       )}
     </Card>
   );
@@ -323,7 +325,7 @@ export default function FeatureAtlasView({
           <div>
             <h2 className="text-lg font-semibold text-slate-50">{kind === "prompt" ? "Prompt feature atlas" : "Response feature atlas"}</h2>
             <p className="mt-1 text-xs text-slate-500">
-              {map.n_total.toLocaleString()} / {map.n_total.toLocaleString()} axes plotted · {map.n_named.toLocaleString()} named · {map.n_verified.toLocaleString()} verified · {map.projection.toUpperCase()} ({map.metric})
+              {map.n_total.toLocaleString()} / {map.n_total.toLocaleString()} axes plotted · {map.n_named.toLocaleString()} named · {map.n_verified.toLocaleString()} labels passed fidelity · {map.projection.toUpperCase()} ({map.metric})
             </p>
           </div>
           <div className="flex items-center gap-1">
@@ -346,7 +348,7 @@ export default function FeatureAtlasView({
                 aria-label="Filter atlas by verification status"
                 className="min-w-0 rounded-lg border border-edge bg-ink px-2 py-2 text-xs text-slate-300 outline-none">
                 <option value="all">All statuses</option>
-                <option value="verified">Verified</option>
+                <option value="verified">Fidelity passed</option>
                 <option value="named">Named</option>
                 <option value="failed">Failed check</option>
                 <option value="unnamed">Unnamed</option>
@@ -466,7 +468,7 @@ export default function FeatureAtlasView({
             </div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
               {(kind === "prompt" || colorMode === "verification" ? [
-                ["verified", STATUS_COLORS.verified], ["failed check", STATUS_COLORS.failed],
+                ["fidelity passed", STATUS_COLORS.verified], ["fidelity failed", STATUS_COLORS.failed],
                 ["not tested", STATUS_COLORS.untested], ["unnamed", STATUS_COLORS.unnamed],
               ] : [
                 ["behavioral", FAMILY_COLORS.behavioral], ["prompt-specific", FAMILY_COLORS.prompt_specific],
@@ -481,19 +483,16 @@ export default function FeatureAtlasView({
         <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
           <div className="min-w-0 space-y-4">
             <Card>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{kind === "prompt" ? "Prompt feature" : "Response feature"} {selectedId}</div>
-                  <h3 className="text-lg font-semibold leading-snug text-slate-50"><ConceptLabel id={selectedId} name={selected?.concept} wrap /></h3>
-                </div>
-                <VerifiedBadge pass={selected?.fidelity_pass} n={selected?.fidelity_n} />
+              <div className="min-w-0">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{kind === "prompt" ? "Prompt feature" : "Response feature"} {selectedId}</div>
+                <h3 className="text-lg font-semibold leading-snug text-slate-50"><ConceptLabel id={selectedId} name={selected?.concept} wrap /></h3>
+                <div className="mt-2"><VerifiedBadge pass={selected?.fidelity_pass} n={selected?.fidelity_n} /></div>
               </div>
               {selected?.feature_summary && <p className="mt-3 break-words text-sm leading-relaxed text-slate-400">{selected.feature_summary}</p>}
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
                 {kind === "response" && <><div><dt className="text-slate-500">Semantic role</dt><dd className="mt-1 text-slate-200">{selected?.semantic_role?.replace(/_/g, " ") ?? "unclassified"}</dd></div>
                 <div><dt className="text-slate-500">Family</dt><dd className="mt-1 text-slate-200">{featureFamily(selected).replace(/_/g, " ")}</dd></div>
                 <div><dt className="text-slate-500">Response prevalence</dt><dd className="mt-1 text-slate-200">{pct(metricRate(selected), 2)}</dd></div></>}
-                {kind === "prompt" && <div><dt className="text-slate-500">Verification</dt><dd className="mt-1 text-slate-200">{selected?.fidelity_pass === true ? "passed" : selected?.fidelity_pass === false ? "did not pass" : "not tested"}</dd></div>}
                 <div><dt className="text-slate-500">Decoder norm</dt><dd className="mt-1 font-mono text-slate-200">{selectedPoint.decoder_norm.toFixed(3)}</dd></div>
               </dl>
               {selectedPoint.zero_decoder && <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2 text-xs text-amber-300">This decoder column has zero norm, so its atlas position is only a visibility placeholder.</p>}

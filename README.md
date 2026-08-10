@@ -20,7 +20,8 @@ The repository works both as a standalone Vite application and as the
   prompt concepts that are frequently active on the same requests.
 - **Concept distribution** — switch between response and prompt sparse-code spaces to
   inspect corpus coverage, concepts per item, prevalence, group differences, and evidence
-  for any listed concept.
+  for any listed concept. Language/source selectors re-rank the concept table and carry
+  through to the opened example evidence when the exporter provides row metadata.
 - **Behaviors** — searchable response features with fidelity, prevalence, prompt
   associations, conditional effects, and activation examples. Selecting an associated
   prompt shows a response where both sparse concepts activate.

@@ -1,8 +1,10 @@
 import { ArrowUpRight, Database, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useDataArtifact } from "../data";
 import type { JointExample, JointExampleShard } from "../types";
-import { Card, ConceptLabel, SkeletonList, clip } from "./ui";
+import { Card, ConceptLabel, SkeletonList } from "./ui";
+import { ActivationMeter, EvidenceText, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
 
 type EvidenceKind = "elicitation" | "preference";
 
@@ -24,7 +26,14 @@ export default function JointEvidence({
   onOpenBehavior?: () => void;
 }) {
   const shard = useDataArtifact<JointExampleShard>(`joint_examples/${promptFeature}.json`);
-  const examples = shard?.examples[String(responseFeature)] ?? [];
+  const allExamples = shard?.examples[String(responseFeature)] ?? [];
+  const [group, setGroup] = useState("");
+  useEffect(() => { setGroup(""); }, [promptFeature, responseFeature]);
+  const groups = useMemo(() => [...new Set(allExamples.map((example) => example.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
+  const examples = allExamples.filter((example) => !group || example.group === group);
+  const promptDomain = activationDomain(allExamples.map((example) => example.prompt_activation));
+  const responseDomain = activationDomain(allExamples.map((example) => example.response_activation));
+  const groupColumn = allExamples.find((example) => example.group_column)?.group_column ?? "language";
 
   return (
     <Card className="border-accent/25 bg-accent/[0.035]">
@@ -45,6 +54,7 @@ export default function JointEvidence({
             {onOpenBehavior && <EvidenceLink onClick={onOpenBehavior}>Open behavior</EvidenceLink>}
           </div>
         )}
+        <ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} />
       </div>
 
       {shard === undefined ? (
@@ -61,7 +71,8 @@ export default function JointEvidence({
       ) : (
         <div className="mt-3 grid gap-3 xl:grid-cols-2">
           {examples.map((example, index) => (
-            <EvidenceCard key={`${example.side}-${index}`} example={example} />
+            <EvidenceCard key={`${example.side}-${index}`} example={example}
+              promptDomain={promptDomain} responseDomain={responseDomain} />
           ))}
         </div>
       )}
@@ -84,28 +95,26 @@ function EvidenceLink({ children, onClick }: { children: ReactNode; onClick: () 
   );
 }
 
-function EvidenceCard({ example }: { example: JointExample }) {
+function EvidenceCard({ example, promptDomain, responseDomain }: {
+  example: JointExample;
+  promptDomain: { min: number; max: number };
+  responseDomain: { min: number; max: number };
+}) {
   const outcomeTone = example.outcome === "win" ? "bg-good/15 text-good"
     : example.outcome === "loss" ? "bg-bad/15 text-bad" : "bg-slate-600/20 text-slate-400";
   return (
     <article className="min-w-0 rounded-xl border border-edge bg-ink/45 p-3 text-xs">
-      <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+      <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[10px]">
         <span className="rounded-md bg-slate-600/25 px-1.5 py-0.5 font-medium text-slate-300">{example.model}</span>
         {example.outcome && <span className={`rounded-md px-1.5 py-0.5 font-medium ${outcomeTone}`}>{example.outcome}</span>}
-        <span className="rounded-md border border-edge/70 px-1.5 py-0.5 tabular-nums text-slate-400" title="raw positive prompt-feature activation">
-          prompt z {example.prompt_activation.toFixed(2)}
-        </span>
-        <span className="rounded-md border border-edge/70 px-1.5 py-0.5 tabular-nums text-slate-400" title="raw positive response-feature activation">
-          response z {example.response_activation.toFixed(2)}
-        </span>
       </div>
-      <div className="rounded-lg bg-panel/60 p-2 text-slate-400">
-        <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-600">Prompt</span>
-        {clip(example.prompt, 420)}
+      <div className="mb-3 grid gap-3 sm:grid-cols-2">
+        <ActivationMeter value={example.prompt_activation} min={promptDomain.min} max={promptDomain.max} label="Prompt activation" compact />
+        <ActivationMeter value={example.response_activation} min={responseDomain.min} max={responseDomain.max} label="Response activation" compact />
       </div>
-      <div className="mt-2 whitespace-pre-wrap text-slate-300">
-        <span className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-600">Response</span>
-        {clip(example.response, 900)}
+      <div className="space-y-2">
+        <EvidenceText kind="prompt" preview>{example.prompt}</EvidenceText>
+        <EvidenceText kind="response" preview>{example.response}</EvidenceText>
       </div>
     </article>
   );

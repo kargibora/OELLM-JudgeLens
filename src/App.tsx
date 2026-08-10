@@ -668,6 +668,7 @@ function DistributionRoute({ features }: { features: Feature[] }) {
   const promptDist = useDataArtifact<ConceptDistributionType>("prompt_concept_distribution.json");
   const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
   const [kind, setKind] = useState<"response" | "prompt">("response");
+  const [group, setGroup] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
 
   useEffect(() => {
@@ -693,20 +694,21 @@ function DistributionRoute({ features }: { features: Feature[] }) {
       <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-edge/70 bg-panel/55 p-2">
         <Segmented
           value={activeKind}
-          onChange={(next) => { setKind(next); setSelected(null); }}
+          onChange={(next) => { setKind(next); setSelected(null); setGroup(""); }}
           options={available}
         />
         <span className="hidden pr-2 text-xs text-slate-500 sm:block">Choose the sparse code space to summarize</span>
       </div>
     )}
-    <ConceptDistributionView dist={dist} kind={activeKind} onSelectConcept={setSelected} />
+    <ConceptDistributionView dist={dist} kind={activeKind} group={group}
+      onGroupChange={(next) => { setGroup(next); setSelected(null); }} onSelectConcept={setSelected} />
     {selected != null && activeKind === "response" && (
       <ConceptDetailDrawer featureId={selected} features={features}
-        onClose={() => setSelected(null)} onSelectFeature={setSelected} />
+        initialGroup={group} onClose={() => setSelected(null)} onSelectFeature={setSelected} />
     )}
     {selected != null && activeKind === "prompt" && (
       <PromptConceptDetailDrawer featureId={selected} features={promptFeatureRows}
-        onClose={() => setSelected(null)} onSelectFeature={setSelected} />
+        initialGroup={group} onClose={() => setSelected(null)} onSelectFeature={setSelected} />
     )}
   </>;
 }

@@ -63,10 +63,14 @@ function GroupBars({ rates, groups }: { rates?: Record<string, number>; groups: 
 export default function ConceptDistribution({
   dist,
   kind = "response",
+  group = "",
+  onGroupChange,
   onSelectConcept,
 }: {
   dist: Dist;
   kind?: "response" | "prompt";
+  group?: string;
+  onGroupChange?: (group: string) => void;
   onSelectConcept?: (featureId: number) => void;
 }) {
   const [sort, setSort] = useState<Sort>("prevalence");
@@ -74,22 +78,27 @@ export default function ConceptDistribution({
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = q
+    let filtered = q
       ? dist.features.filter(
           (f) =>
             (f.concept ?? "").toLowerCase().includes(q) || String(f.feature_id) === q,
         )
       : dist.features;
+    if (group) filtered = filtered.filter((feature) => (feature.group_fire_rate?.[group] ?? 0) > 0);
     const live = filtered.filter((f) => f.n_active > 0);
+    const rate = (feature: ConceptDistributionFeature) =>
+      group ? feature.group_fire_rate?.[group] ?? 0 : feature.fire_rate;
     const cmp: Record<Sort, (a: ConceptDistributionFeature, b: ConceptDistributionFeature) => number> = {
-      prevalence: (a, b) => b.fire_rate - a.fire_rate,
-      rarity: (a, b) => a.fire_rate - b.fire_rate,
+      prevalence: (a, b) => rate(b) - rate(a),
+      rarity: (a, b) => rate(a) - rate(b),
       strength: (a, b) => b.mean_activation - a.mean_activation,
     };
     return [...live].sort(cmp[sort]);
-  }, [dist.features, sort, query]);
+  }, [dist.features, sort, query, group]);
 
-  const maxRate = rows.length ? rows.reduce((m, f) => Math.max(m, f.fire_rate), 0) : 1;
+  const rateOf = (feature: ConceptDistributionFeature) =>
+    group ? feature.group_fire_rate?.[group] ?? 0 : feature.fire_rate;
+  const maxRate = rows.length ? rows.reduce((m, f) => Math.max(m, rateOf(f)), 0) : 1;
   const q = dist.concepts_per_row.quantiles;
   const rowKind = kind === "prompt" ? "prompt" : "response";
   const RowKind = kind === "prompt" ? "Prompts" : "Responses";
@@ -106,6 +115,8 @@ export default function ConceptDistribution({
         concepts{dist.n_total_features != null && dist.n_total_features !== dist.n_features
           ? ` from ${dist.n_total_features.toLocaleString()} sparse axes`
           : ""}.
+        {group && <> The concept table and opened examples are filtered to <b>{group}</b>;
+          headline cards remain whole-corpus summaries.</>}
       </Explain>
 
       <Card>
@@ -146,6 +157,17 @@ export default function ConceptDistribution({
             aria-label={`Filter ${conceptKind}`}
           />
           <span className="text-xs text-slate-500">{rows.length.toLocaleString()} shown</span>
+          {dist.groups.length > 1 && onGroupChange && (
+            <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              {dist.group_column ?? "group"}
+              <select value={group} onChange={(event) => onGroupChange(event.target.value)}
+                aria-label={dist.group_column ?? "group"}
+                className="rounded-lg border border-edge bg-ink px-2 py-1.5 text-xs font-normal normal-case tracking-normal text-slate-300 outline-none focus:border-accent/60">
+                <option value="">All</option>
+                {dist.groups.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+          )}
         </div>
 
         {dist.groups.length > 1 && (
@@ -174,14 +196,18 @@ export default function ConceptDistribution({
               <div className="hidden min-w-12 flex-1 h-2 bg-edge/40 rounded overflow-hidden sm:block">
                 <div
                   className="h-full bg-accent/80"
-                  style={{ width: `${Math.max(1, (f.fire_rate / maxRate) * 100)}%` }}
+                  style={{ width: `${Math.max(1, (rateOf(f) / maxRate) * 100)}%` }}
                 />
               </div>
               <div className="w-20 shrink-0 text-right text-sm tabular-nums">
-                {pct(f.fire_rate)}
+                {pct(rateOf(f))}
               </div>
               <div className="hidden w-24 shrink-0 text-right text-xs text-slate-500 tabular-nums md:block">
-                {f.n_active.toLocaleString()} {rowKind}s
+                {group
+                  ? dist.group_totals?.[group] != null
+                    ? `${Math.round(rateOf(f) * dist.group_totals[group]).toLocaleString()} ${rowKind}s`
+                    : `${rowKind} subset`
+                  : `${f.n_active.toLocaleString()} ${rowKind}s`}
               </div>
               {dist.groups.length > 1 && (
                 <div className="hidden w-24 shrink-0 xl:block">

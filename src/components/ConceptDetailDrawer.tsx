@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ConceptCoactivation, ElicitationData, Example, Feature } from "../types";
+import type { ConceptCoactivation, ConceptDistribution, ElicitationData, Example, Feature } from "../types";
 import { pct, useDataArtifact, useFeatureExamples } from "../data";
-import { Card, clip, conceptLabel } from "./ui";
+import { Card, conceptLabel } from "./ui";
 import JointEvidence from "./JointEvidence";
 import CoactivationPairEvidence from "./CoactivationPairEvidence";
 import FeatureDetailDrawerShell from "./FeatureDetailDrawerShell";
+import { ActivationEvidenceCard, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
 
 export default function ConceptDetailDrawer({
   featureId,
   features,
+  initialGroup = "",
   onClose,
   onSelectFeature,
 }: {
   featureId: number;
   features: Feature[];
+  initialGroup?: string;
   onClose: () => void;
   onSelectFeature: (featureId: number) => void;
 }) {
@@ -21,10 +24,12 @@ export default function ConceptDetailDrawer({
   const examples = useFeatureExamples(featureId);
   const coactivation = useDataArtifact<ConceptCoactivation>("coactivation.json");
   const elicitation = useDataArtifact<ElicitationData>("elicitation.json");
+  const distribution = useDataArtifact<ConceptDistribution>("concept_distribution.json");
   const [activePair, setActivePair] = useState<string | null>(null);
   const [activePrompt, setActivePrompt] = useState<number | null>(null);
+  const [group, setGroup] = useState(initialGroup);
 
-  useEffect(() => { setActivePair(null); setActivePrompt(null); }, [featureId]);
+  useEffect(() => { setActivePair(null); setActivePrompt(null); setGroup(initialGroup); }, [featureId, initialGroup]);
 
   const pairs = useMemo(() => (coactivation?.pairs ?? [])
     .filter((pair) => pair.a === featureId || pair.b === featureId)
@@ -39,15 +44,23 @@ export default function ConceptDetailDrawer({
   ), [elicitation]);
   const selectedPair = pairs.find((pair) => `${pair.a}-${pair.b}` === activePair) ?? null;
 
-  const ownExamples = useMemo(() => (examples ?? []).map((row: Example) => {
+  const allExamples = useMemo(() => (examples ?? []).map((row: Example) => {
     const paired = Boolean(row.completion_b);
     const sideA = row.z >= 0;
     return {
       z: row.z,
       prompt: row.prompt,
       response: paired ? (sideA ? row.completion_a : row.completion_b) : row.completion_a,
+      group: row.group,
+      groupColumn: row.group_column,
     };
-  }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 5), [examples]);
+  }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)), [examples]);
+  const groups = useMemo(() => [...new Set(allExamples.map((row) => row.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
+  const ownExamples = useMemo(() => allExamples.filter((row) => !group || row.group === group).slice(0, 5), [allExamples, group]);
+  const maxHint = distribution?.features.find((row) => row.feature_id === featureId)?.max_activation;
+  const domain = useMemo(() => activationDomain(allExamples.map((row) => row.z), maxHint), [allExamples, maxHint]);
+  const groupColumn = allExamples.find((row) => row.groupColumn)?.groupColumn ?? distribution?.group_column ?? "language";
+  const missingGroupMetadata = Boolean(group && examples && groups.length === 0);
 
   return (
     <FeatureDetailDrawerShell kind="response" featureId={featureId} feature={feature} onClose={onClose}>
@@ -67,21 +80,14 @@ export default function ConceptDetailDrawer({
           <Card>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div><div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Activation evidence</div><h3 className="mt-1 text-base font-semibold text-slate-100">Strongest corpus examples</h3></div>
-              <span className="text-xs text-slate-500">{ownExamples.length} shown</span>
+              <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn ?? "language"} /><span className="text-xs text-slate-500">{ownExamples.length} shown</span></div>
             </div>
             {examples === undefined ? <p className="text-sm text-slate-500">Loading examples…</p>
+              : missingGroupMetadata ? <p className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-200/80">This older example shard has no {groupColumn} metadata. Re-export the bundle to filter evidence by {groupColumn}.</p>
               : ownExamples.length === 0 ? <p className="text-sm text-slate-500">No corpus example was exported for this axis.</p>
                 : <div className="space-y-2">{ownExamples.map((example, index) => (
-                  <details key={index} className="rounded-xl border border-edge/70 bg-ink/40 p-3">
-                    <summary className="cursor-pointer list-none text-sm text-slate-300">
-                      <span className="line-clamp-2">{clip(example.response, 260)}</span>
-                      <span className="mt-1 block font-mono text-[10px] text-accent-soft">activation {example.z >= 0 ? "+" : ""}{example.z.toFixed(2)}</span>
-                    </summary>
-                    <div className="mt-3 space-y-3 border-t border-edge/60 pt-3 text-sm leading-relaxed text-slate-300">
-                      <div><div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Prompt</div><p className="whitespace-pre-wrap">{example.prompt}</p></div>
-                      <div><div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Response</div><p className="whitespace-pre-wrap">{example.response}</p></div>
-                    </div>
-                  </details>
+                  <ActivationEvidenceCard key={index} prompt={example.prompt} response={example.response}
+                    value={example.z} min={domain.min} max={domain.max} />
                 ))}</div>}
           </Card>
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { Info } from "lucide-react";
+import { CircleDashed, Info, ShieldAlert, ShieldCheck } from "lucide-react";
 
 // plain-language "how to read this" callout
 export function Explain({ children }: { children: React.ReactNode }) {
@@ -127,20 +127,21 @@ export function ConceptLabel({
 export function VerifiedBadge({ pass, n }: { pass?: boolean | null; n?: number | null }) {
   if (pass === undefined || pass === null)
     return (
-      <span className="rounded-full bg-slate-700/30 px-1.5 py-0.5 text-[10px] text-slate-500"
+      <span className="inline-flex items-center gap-1 rounded-full border border-slate-700/50 bg-slate-800/25 px-2 py-1 text-[10px] font-medium text-slate-500"
         title="this label has not been through the held-out fidelity check yet">
-        not tested
+        <CircleDashed size={11} />Not fidelity-tested
       </span>
     );
+  const Icon = pass ? ShieldCheck : ShieldAlert;
   return (
     <span
-      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-        pass ? "bg-good/15 text-good" : "bg-amber-500/15 text-amber-400"
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium ${
+        pass ? "border-good/20 bg-good/[0.07] text-good" : "border-amber-500/20 bg-amber-500/[0.07] text-amber-300"
       }`}
       title={pass ? "an LLM verifier reproduced this label on held-out examples" : "an LLM verifier could not reproduce this label under the configured held-out checks"}
     >
-      {pass ? "✓ verified" : "✗ failed check"}
-      {n != null ? ` · n=${n}` : ""}
+      <Icon size={11} />{pass ? "Fidelity passed" : "Fidelity failed"}
+      {n != null && <span className="ml-0.5 opacity-70">n={n}</span>}
     </span>
   );
 }

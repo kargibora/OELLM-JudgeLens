@@ -5,6 +5,7 @@ import { Card, Explain, ConceptLabel, conceptLabel, ConceptBarRow, Segmented, cl
 import { pct, usePromptExamples } from "../data";
 import JointEvidence from "./JointEvidence";
 import CoactivationPairEvidence from "./CoactivationPairEvidence";
+import { ActivationEvidenceCard, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
 
 // Prompt-first browser: pick a prompt concept and read, on one page, what responses it
 // tends to elicit (co-activation lift) and which of those actually help win it (the
@@ -196,9 +197,9 @@ export default function PromptBrowser({
                     sel === p.id ? "bg-accent/20 text-slate-100" : "text-slate-300 hover:bg-edge/40"
                   }`}
                 >
-                  <span className="shrink-0 text-xs" title={meta?.verified ? "verified prompt concept" : "unverified"}>
-                    {meta?.verified ? <span className="text-good">✓</span> : <span className="text-slate-600">·</span>}
-                  </span>
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta?.verified ? "bg-good ring-2 ring-good/10" : "bg-slate-700"}`}
+                    title={meta?.verified ? "fidelity check passed" : "label not fidelity-verified"}
+                    aria-label={meta?.verified ? "fidelity check passed" : "label not fidelity-verified"} />
                   <span className="min-w-0 flex-1">
                     <ConceptLabel id={p.id} name={p.name} wrap />
                     {meta?.behavior && <span className="ml-1 text-[10px] text-slate-500">· {meta.behavior}</span>}
@@ -320,35 +321,32 @@ function PromptCoactivationPanel({
 
 function PromptExamplesPanel({ featureId }: { featureId: number }) {
   const examples = usePromptExamples(featureId);
+  const [group, setGroup] = useState("");
+  useEffect(() => { setGroup(""); }, [featureId]);
+  const groups = useMemo(() => [...new Set((examples ?? []).map((example) => example.group).filter((value): value is string => Boolean(value)))].sort(), [examples]);
+  const shown = useMemo(() => (examples ?? []).filter((example) => !group || example.group === group).slice(0, 8), [examples, group]);
+  const domain = useMemo(() => activationDomain((examples ?? []).map((example) => example.z)), [examples]);
+  const groupColumn = (examples ?? []).find((example) => example.group_column)?.group_column ?? "language";
   if (examples === undefined)
     return <Card><p className="text-sm text-slate-500">Loading top-activating prompts…</p></Card>;
   return (
     <Card>
       <div className="mb-2 flex items-center justify-between gap-3">
         <h4 className="text-sm font-semibold text-slate-200">Top-activating prompts</h4>
-        <span className="text-xs text-slate-500">{examples?.length ?? 0} shown</span>
+        <div className="flex items-center gap-3"><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /><span className="text-xs text-slate-500">{shown.length} shown</span></div>
       </div>
       {examples === null ? (
         <p className="text-sm text-slate-500">Prompt examples were not included in this bundle.</p>
-      ) : examples.length === 0 ? (
+      ) : shown.length === 0 ? (
         <p className="text-sm text-slate-500">
-          This axis has no positive activation in the exported prompt corpus. No unrelated
-          example is substituted.
+          {group ? `No retained ${groupColumn}=${group} prompt for this axis.`
+            : "This axis has no positive activation in the exported prompt corpus. No unrelated example is substituted."}
         </p>
       ) : (
-        <div className="space-y-2">
-          {examples.slice(0, 6).map((example, index) => (
-            <details key={index} className="group rounded-lg border border-edge/70 bg-ink/35 px-3 py-2">
-              <summary className="cursor-pointer list-none text-sm text-slate-300">
-                <span className="line-clamp-2">{clip(example.prompt, 260)}</span>
-                <span className="mt-1 block font-mono text-[10px] text-accent-soft">prompt z +{example.z.toFixed(2)}</span>
-              </summary>
-              <p className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap border-t border-edge/60 pt-2 text-sm leading-relaxed text-slate-300">
-                {example.prompt}
-              </p>
-            </details>
-          ))}
-        </div>
+        <div className="space-y-2">{shown.slice(0, 6).map((example, index) => (
+          <ActivationEvidenceCard key={index} prompt={example.prompt} value={example.z}
+            min={domain.min} max={domain.max} />
+        ))}</div>
       )}
     </Card>
   );

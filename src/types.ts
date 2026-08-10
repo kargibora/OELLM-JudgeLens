@@ -164,6 +164,8 @@ export interface Example {
   model_b: string;
   completion_a: string;
   completion_b: string;
+  group?: string;
+  group_column?: string;
 }
 
 export type Examples = Record<string, Example[]>;
@@ -189,6 +191,8 @@ export interface JointExample {
   model: string;
   side: "a" | "b";
   outcome?: "win" | "loss" | "tie";
+  group?: string;
+  group_column?: string;
 }
 export interface JointExampleShard {
   prompt_feature: number;
@@ -351,6 +355,8 @@ export interface FeatureClusterBundle {
 export interface PromptExample {
   z: number;
   prompt: string;
+  group?: string;
+  group_column?: string;
 }
 
 // --- conditional δ_{f,k}: behavior win-relevance WITHIN each prompt type ---
@@ -555,6 +561,7 @@ export interface ConceptDistributionFeature {
   n_active: number;
   fire_rate: number;
   mean_activation: number;
+  max_activation?: number;
   group_fire_rate?: Record<string, number>;
 }
 
@@ -570,6 +577,7 @@ export interface ConceptDistribution {
   };
   dead_features: number[];
   groups: string[];
+  group_totals?: Record<string, number>;
   group_column: string | null;
   code_array: string;
   selection?: "all" | "named" | "verified" | string;
@@ -593,6 +601,8 @@ export interface CoactivationExample {
   response?: string;
   /** Sparse values for axes participating in retained pairs on this row. */
   activations?: Record<string, number>;
+  group?: string;
+  group_column?: string;
 }
 
 export interface ConceptCoactivation {

@@ -9,6 +9,7 @@ import {
 import { fmt, pct, useFeatureExamples } from "../data";
 import JointEvidence from "./JointEvidence";
 import { VirtualList } from "./VirtualList";
+import { ActivationEvidenceCard, ExampleGroupSelect, activationDomain } from "./ActivationEvidence";
 
 // Feature-first hub (master-detail). Left: browse/sort/filter response features. Right:
 // the selected feature's fire rate + reward (header, always visible) and three sub-tabs —
@@ -181,9 +182,9 @@ export default function FeaturePanel({
                   className={`flex h-full w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
                     sel === f.feature_id ? "bg-accent/20 text-slate-100" : "text-slate-300 hover:bg-edge/40"}`}>
                   {!verifiedOnly && (
-                    <span className="shrink-0 text-xs" title={f.fidelity_pass ? "verified" : "not verified"}>
-                      {f.fidelity_pass ? <span className="text-good">✓</span> : <span className="text-slate-600">·</span>}
-                    </span>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${f.fidelity_pass ? "bg-good ring-2 ring-good/10" : "bg-slate-700"}`}
+                      title={f.fidelity_pass ? "fidelity check passed" : "label not fidelity-verified"}
+                      aria-label={f.fidelity_pass ? "fidelity check passed" : "label not fidelity-verified"} />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block overflow-hidden" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
@@ -457,7 +458,9 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
     () => (raw ?? []).some((e) => Boolean(e.completion_b)),
     [raw],
   );
-  const items = useMemo(() => {
+  const [group, setGroup] = useState("");
+  useEffect(() => { setGroup(""); }, [concept]);
+  const allItems = useMemo(() => {
     return (raw ?? []).map((e) => {
       const aSide = e.z >= 0; // A exhibits the feature more when z_diff > 0
       return {
@@ -465,10 +468,15 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
         prompt: e.prompt,
         model: paired ? (aSide ? e.model_a : e.model_b) : "",
         completion: paired ? (aSide ? e.completion_a : e.completion_b) : e.completion_a,
+        group: e.group,
+        groupColumn: e.group_column,
       };
-    }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 12);
+    }).sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
   }, [raw, paired]);
-  const clipC = (s: string, n = 1400) => (s.length > n ? s.slice(0, n) + " …[truncated]" : s);
+  const groups = useMemo(() => [...new Set(allItems.map((item) => item.group).filter((value): value is string => Boolean(value)))].sort(), [allItems]);
+  const items = useMemo(() => allItems.filter((item) => !group || item.group === group).slice(0, 12), [allItems, group]);
+  const domain = useMemo(() => activationDomain(allItems.map((item) => item.z)), [allItems]);
+  const groupColumn = allItems.find((item) => item.groupColumn)?.groupColumn ?? "language";
   const loading = raw === undefined;
   if (loading)
     return (
@@ -479,7 +487,7 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
     );
   return (
     <Card>
-      <h4 className="text-sm font-semibold text-slate-200">{paired ? `Examples with strongest contrast on “${concept}”` : `Strongest examples of “${concept}”`}</h4>
+      <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="text-sm font-semibold text-slate-200">{paired ? `Examples with strongest contrast on “${concept}”` : `Strongest examples of “${concept}”`}</h4><ExampleGroupSelect groups={groups} value={group} onChange={setGroup} column={groupColumn} /></div>
       {contrastOnly && paired && (
         <p className="mt-1 text-[11px] leading-relaxed text-amber-300/80">
           Selected by relative axis contrast: this side scores above the paired answer. That
@@ -488,23 +496,9 @@ function FeatureExamples({ items: raw, concept, contrastOnly }: {
       )}
       {items.length === 0 ? <p className="mt-1 px-1 py-3 text-xs text-slate-500">No examples for this feature in the bundle.</p> : (
         <div className="mt-2 flex flex-col gap-2">
-          {items.map((it, i) => (
-            <div key={i} className="rounded-lg border border-edge bg-ink/40 p-2 text-xs">
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                {it.model && (
-                  <span className="rounded bg-slate-600/25 px-1.5 py-0.5 font-medium text-slate-400">{it.model}</span>
-                )}
-                <span className="font-mono text-slate-500"
-                  title={paired ? "signed A-minus-B feature-axis contrast" : "activation on this response"}>
-                  {paired
-                    ? `pairwise contrast ${it.z >= 0 ? "+" : ""}${it.z.toFixed(2)}`
-                    : `activation ${it.z.toFixed(2)}`}
-                </span>
-              </div>
-              <div className="mb-1 text-slate-400"><span className="font-semibold text-slate-300">prompt:</span> {clip(it.prompt, 260)}</div>
-              <div className="whitespace-pre-wrap text-slate-300">{clipC(it.completion)}</div>
-            </div>
-          ))}
+          {items.map((it, i) => <ActivationEvidenceCard key={i} prompt={it.prompt}
+            response={it.completion} value={it.z} min={domain.min} max={domain.max}
+            label={paired ? "A−B contrast" : "Activation"} model={it.model} />)}
         </div>
       )}
     </Card>

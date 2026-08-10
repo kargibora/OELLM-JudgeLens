@@ -10,11 +10,13 @@ import FeatureDetailDrawerShell from "./FeatureDetailDrawerShell";
 export default function PromptConceptDetailDrawer({
   featureId,
   features,
+  initialGroup = "",
   onClose,
   onSelectFeature,
 }: {
   featureId: number;
   features: Feature[];
+  initialGroup?: string;
   onClose: () => void;
   onSelectFeature: (featureId: number) => void;
 }) {
@@ -39,12 +41,12 @@ export default function PromptConceptDetailDrawer({
           {feature?.feature_summary || "LLM-assigned prompt concept. Inspect its strongest prompts before treating the label as a semantic claim."}
         </p>
         <dl className="mt-5 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Verification</dt><dd className="mt-1 text-sm text-slate-100">{feature?.fidelity_pass === true ? "passed" : feature?.fidelity_pass === false ? "did not pass" : "not tested"}</dd></div>
+          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Prompt prevalence</dt><dd className="mt-1 text-sm text-slate-100">{pct(feature?.fire_rate, 2)}</dd></div>
           <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Fidelity agreement</dt><dd className="mt-1 text-sm text-slate-100">{pct(feature?.agreement, 0)}</dd></div>
         </dl>
       </Card>
 
-          <PromptAtlasExamples fid={featureId} concept={name} />
+          <PromptAtlasExamples fid={featureId} concept={name} initialGroup={initialGroup} />
 
           <Card>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prompt relationships</div>
