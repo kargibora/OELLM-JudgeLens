@@ -128,20 +128,33 @@ export function PromptAtlasExamples({
   fid,
   concept,
   negativeConcept,
+  pole: controlledPole,
+  onPoleChange,
   initialGroup = "",
 }: {
   fid: number;
   concept: string;
   negativeConcept?: string;
+  pole?: "positive" | "negative";
+  onPoleChange?: (pole: "positive" | "negative") => void;
   initialGroup?: string;
 }) {
   const raw = usePromptExamples(fid);
   const { filters, setGroup } = useAnalysisFilters();
   const group = initialGroup || filters.group;
   const [mode, setMode] = useState<EvidenceMode>("strongest");
-  const [pole, setPole] = useState<"positive" | "negative">("positive");
+  const [localPole, setLocalPole] = useState<"positive" | "negative">("positive");
+  const pole = controlledPole ?? localPole;
+  const selectPole = (value: "positive" | "negative") => {
+    setLocalPole(value);
+    onPoleChange?.(value);
+  };
   const [exampleIndex, setExampleIndex] = useState(0);
-  useEffect(() => { setMode("strongest"); setPole("positive"); setExampleIndex(0); }, [fid]);
+  useEffect(() => {
+    setMode("strongest");
+    setLocalPole("positive");
+    setExampleIndex(0);
+  }, [fid]);
   useEffect(() => { setExampleIndex(0); }, [group, mode, pole]);
   const allExamples = useMemo(
     () => (raw ?? []).filter((row) => !row.pole || row.pole === pole)
@@ -165,7 +178,7 @@ export function PromptAtlasExamples({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-slate-100">Prompt examples</h3>
         <div className="flex flex-wrap items-center gap-3">
-          {hasSignedPoles && <Segmented value={pole} onChange={setPole} size="xs" options={[
+          {hasSignedPoles && <Segmented value={pole} onChange={selectPole} size="xs" options={[
             { value: "positive", label: "z > 0", title: concept },
             { value: "negative", label: "z < 0", title: negativeConcept },
           ]} />}

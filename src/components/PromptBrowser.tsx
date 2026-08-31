@@ -13,7 +13,15 @@ import { PromptAtlasExamples } from "./FeatureAtlasView";
 // length-controlled Δwin-rate within that prompt type), plus example prompts + outcomes.
 // Replaces the dense feature×prompt heatmap.
 
-type PC = { id: number; name: string | null; n: number | null; rate: number | null; maxAbsDelta: number };
+type Pole = "positive" | "negative";
+type PC = {
+  id: number;
+  name: string | null;
+  negativeName: string | null;
+  n: number | null;
+  rate: number | null;
+  maxAbsDelta: number;
+};
 
 export default function PromptBrowser({
   conditional,
@@ -56,6 +64,7 @@ export default function PromptBrowser({
   const [sortBy, setSortBy] = useState<"n" | "effect">(hasLabels ? "effect" : "n");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sel, setSel] = useState<number | null>(null);
+  const [selPole, setSelPole] = useState<Pole>("positive");
   const { filters } = useAnalysisFilters();
   const promptDistribution = useDataArtifact<ConceptDistribution>("prompt_concept_distribution.json");
   const promptRates = useMemo(() => new Map(
@@ -77,22 +86,35 @@ export default function PromptBrowser({
     // labels or a prompt→response linkage table (for example a first-pass SFT atlas).
     // Do not hide those concepts merely because the optional relationship analyses are
     // absent. Counts stay unknown rather than pretending each concept has zero support.
-    const byId = new Map<number, { id: number; name: string | null }>();
+    const byId = new Map<number, { id: number; name: string | null; negativeName: string | null }>();
     if (!clustered) {
       for (const p of promptFeatures?.features ?? [])
-        byId.set(p.feature_id, { id: p.feature_id, name: p.positive_concept ?? p.concept ?? null });
+        byId.set(p.feature_id, {
+          id: p.feature_id,
+          name: p.positive_concept ?? p.concept ?? null,
+          negativeName: p.negative_concept ?? null,
+        });
       for (const p of elicitation?.prompt_concepts ?? []) {
         const old = byId.get(p.id);
-        byId.set(p.id, { id: p.id, name: old?.name ?? p.concept ?? null });
+        byId.set(p.id, {
+          id: p.id,
+          name: old?.name ?? p.concept ?? null,
+          negativeName: old?.negativeName ?? null,
+        });
       }
     }
     for (const p of cond?.prompt_concepts ?? []) {
       const old = byId.get(p.id);
-      byId.set(p.id, { id: p.id, name: old?.name ?? p.name ?? null });
+      byId.set(p.id, {
+        id: p.id,
+        name: old?.name ?? p.name ?? null,
+        negativeName: old?.negativeName ?? null,
+      });
     }
     return [...byId.values()].map((p) => ({
       id: p.id,
       name: p.name,
+      negativeName: p.negativeName,
       n: nBy.get(p.id) ?? null,
       rate: promptRates.get(p.id) ?? null,
       maxAbsDelta: effBy.get(p.id) ?? 0,
@@ -102,7 +124,9 @@ export default function PromptBrowser({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return concepts
-      .filter((p) => !q || conceptLabel(p.id, p.name).toLowerCase().includes(q))
+      .filter((p) => !q
+        || conceptLabel(p.id, p.name).toLowerCase().includes(q)
+        || (p.negativeName ?? "").toLowerCase().includes(q))
       .filter((p) => clustered || !verifiedOnly || pmeta.get(p.id)?.verified)
       .filter((p) => !filters.group || clustered || (p.rate ?? 0) > 0)
       .sort((a, b) => (sortBy === "n"
@@ -117,9 +141,11 @@ export default function PromptBrowser({
   useEffect(() => {
     if (focus && handledFocus.current !== focus) {
       setSel(focus.pc);
+      setSelPole("positive");
       handledFocus.current = focus;
     } else if (sel == null && filtered.length) {
       setSel(filtered[0].id);
+      setSelPole("positive");
     }
   }, [focus, filtered, sel]);
 
@@ -137,6 +163,9 @@ export default function PromptBrowser({
     : promptFeatures?.features.find((feature) => feature.feature_id === sel);
   const hasSignedPoles = selectedFeature?.negative_concept !== undefined
     || selectedFeature?.negative_status !== undefined;
+  const hasAnySignedPoles = !clustered && (promptFeatures?.features ?? [])
+    .some((feature) => feature.negative_concept !== undefined
+      || feature.negative_status !== undefined);
   const selectionHidden = sel != null && !filtered.some((p) => p.id === sel);
 
   return (
@@ -160,7 +189,7 @@ export default function PromptBrowser({
           <span className="text-xs font-medium text-slate-500">Prompt units</span>
           <Segmented
             value={keyspace}
-            onChange={(v) => { setKeyspace(v); setSel(null); setVerifiedOnly(false); }}
+            onChange={(v) => { setKeyspace(v); setSel(null); setSelPole("positive"); setVerifiedOnly(false); }}
             options={[
               { value: "raw", label: "Individual concepts", title: "Fine-grained prompt features" },
               { value: "clustered", label: "Behavior clusters", title: "Broader groups of co-firing prompt features" },
@@ -199,7 +228,7 @@ export default function PromptBrowser({
               <span><b className="font-medium text-slate-300">Checked labels only</b><br />Hide prompt names that did not pass the label check.</span>
             </label>}
             <div className="flex items-center justify-between border-t border-edge/60 pt-2 text-[11px] text-slate-500">
-              <span>{filtered.length.toLocaleString()} of {concepts.length.toLocaleString()} concepts</span>
+              <span>{filtered.length.toLocaleString()} of {concepts.length.toLocaleString()} {hasAnySignedPoles ? "axes" : "concepts"}{hasAnySignedPoles && ` · ${(concepts.length * 2).toLocaleString()} poles`}</span>
               {(query || verifiedOnly) && <button onClick={() => { setQuery(""); setVerifiedOnly(false); }} className="text-accent hover:text-accent/80">Clear filters</button>}
             </div>
           </div>
@@ -212,6 +241,31 @@ export default function PromptBrowser({
             <div className="flex flex-col">
             {filtered.map((p) => {
               const meta = clustered ? undefined : pmeta.get(p.id);
+              const signed = !clustered && hasAnySignedPoles;
+              if (signed) return (
+                <div key={p.id} className={`mb-1 rounded-lg border transition ${sel === p.id ? "border-accent/35 bg-accent/[0.06]" : "border-transparent hover:border-edge/70"}`}>
+                  <div className="flex items-center justify-between px-2 pb-0.5 pt-1.5 text-[10px] text-slate-600">
+                    <span className="inline-flex items-center gap-1.5 font-mono">
+                      <span className={`h-1.5 w-1.5 rounded-full ${meta?.verified ? "bg-good" : "bg-slate-700"}`} />
+                      axis {p.id}
+                    </span>
+                    {filters.group && p.rate != null ? <span>{pct(p.rate, 1)}</span>
+                      : p.n != null ? <span>n={p.n.toLocaleString()}</span> : null}
+                  </div>
+                  {(["positive", "negative"] as Pole[]).map((pole) => {
+                    const name = pole === "positive" ? p.name : p.negativeName;
+                    const active = sel === p.id && selPole === pole;
+                    return <button key={pole} type="button"
+                      onClick={() => { setSel(p.id); setSelPole(pole); }}
+                      className={`flex w-full min-w-0 items-start gap-2 px-2 py-1.5 text-left text-xs transition ${active ? "bg-accent/15 text-slate-100" : "text-slate-400 hover:bg-edge/35 hover:text-slate-200"}`}>
+                      <span className={`mt-0.5 shrink-0 font-mono text-[9px] ${pole === "positive" ? "text-sky-300/80" : "text-amber-300/80"}`}>
+                        {pole === "positive" ? "z > 0" : "z < 0"}
+                      </span>
+                      <span className="min-w-0 flex-1 leading-snug">{name || `unnamed ${pole} pole`}</span>
+                    </button>;
+                  })}
+                </div>
+              );
               return (
                 <button
                   key={p.id}
@@ -249,42 +303,49 @@ export default function PromptBrowser({
           <div className="min-w-0 flex flex-col gap-4">
             <Card>
               {hasSignedPoles ? (
-                <dl className="grid gap-3 sm:grid-cols-2">
-                  <div className="border-l-2 border-sky-400/60 pl-3">
-                    <dt className="font-mono text-[10px] text-sky-300/80">z &gt; 0</dt>
-                    <dd className="mt-1 text-base font-semibold leading-snug text-slate-100">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => setSelPole("positive")}
+                    aria-pressed={selPole === "positive"}
+                    className={`border-l-2 border-sky-400/60 py-1 pl-3 text-left transition ${selPole === "positive" ? "bg-sky-400/[0.06]" : "opacity-55 hover:opacity-85"}`}>
+                    <span className="block font-mono text-[10px] text-sky-300/80">z &gt; 0</span>
+                    <span className="mt-1 block text-base font-semibold leading-snug text-slate-100">
                       {selectedFeature?.positive_concept || selectedFeature?.concept || `feature ${sel}`}
-                    </dd>
-                  </div>
-                  <div className="border-l-2 border-amber-400/60 pl-3">
-                    <dt className="font-mono text-[10px] text-amber-300/80">z &lt; 0</dt>
-                    <dd className="mt-1 text-base font-semibold leading-snug text-slate-100">
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => setSelPole("negative")}
+                    aria-pressed={selPole === "negative"}
+                    className={`border-l-2 border-amber-400/60 py-1 pl-3 text-left transition ${selPole === "negative" ? "bg-amber-400/[0.06]" : "opacity-55 hover:opacity-85"}`}>
+                    <span className="block font-mono text-[10px] text-amber-300/80">z &lt; 0</span>
+                    <span className="mt-1 block text-base font-semibold leading-snug text-slate-100">
                       {selectedFeature?.negative_concept || `feature ${sel} (negative pole)`}
-                    </dd>
-                  </div>
-                </dl>
+                    </span>
+                  </button>
+                </div>
               ) : (
                 <h3 className="text-lg font-semibold leading-snug text-slate-100">
                   <ConceptLabel id={sel} name={selName} wrap />
                 </h3>
               )}
               <p className="mt-0.5 text-xs text-slate-500">
-                {elicitation || cond
+                {(!hasSignedPoles || selPole === "positive") && (elicitation || cond)
                   ? `what this prompt tends to produce${hasLabels ? ", and what wins it" : ""}`
-                  : "prompt concept"}
+                  : "prompt evidence"}
                 <span className="ml-2 font-mono">{clustered ? "cluster " : "p"}{sel}</span>
               </p>
             </Card>
             {!clustered && <PromptAtlasExamples fid={sel}
               concept={selectedFeature?.positive_concept || selName || `feature ${sel}`}
-              negativeConcept={selectedFeature?.negative_concept} />}
-            {!clustered && <PromptCoactivationPanel coactivation={coactivation} pc={sel}
-              onSelectPrompt={setSel} />}
-            {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} features={responseFeatures} onJumpFeature={onJumpFeature} />}
-            {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} features={responseFeatures} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
+              negativeConcept={selectedFeature?.negative_concept}
+              pole={hasSignedPoles ? selPole : undefined} onPoleChange={setSelPole} />}
+            {(!hasSignedPoles || selPole === "positive") && <>
+              {!clustered && <PromptCoactivationPanel coactivation={coactivation} pc={sel}
+                onSelectPrompt={(featureId) => { setSel(featureId); setSelPole("positive"); }} />}
+              {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} features={responseFeatures} onJumpFeature={onJumpFeature} />}
+              {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} features={responseFeatures} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
+            </>}
             {/* report_battles keys concepts by their raw name (bare id string when unnamed),
                 NOT the "feature N" display label — match that, else examples never join. */}
-            {!clustered && <ExamplesPanel reportBattles={reportBattles} conceptName={selName ?? String(sel)}
+            {!clustered && (!hasSignedPoles || selPole === "positive") && <ExamplesPanel reportBattles={reportBattles} conceptName={selName ?? String(sel)}
               canLoad={canLoadExamples} onLoad={onLoadExamples} />}
           </div>
         )}
