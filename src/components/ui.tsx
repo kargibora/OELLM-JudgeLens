@@ -218,7 +218,7 @@ export function SkeletonList({ n = 3, itemClass = "h-24" }: { n?: number; itemCl
 export function Segmented<T extends string>({
   options, value, onChange, size = "sm",
 }: {
-  options: readonly { value: T; label: string; title?: string }[];
+  options: readonly { value: T; label: string; title?: string; disabled?: boolean; activeClassName?: string }[];
   value: T;
   onChange: (v: T) => void;
   size?: "sm" | "xs";
@@ -231,10 +231,13 @@ export function Segmented<T extends string>({
           type="button"
           key={o.value}
           title={o.title}
+          disabled={o.disabled}
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={`rounded-md transition-colors duration-150 ${pad} ${
-            value === o.value ? "bg-accent text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+            value === o.value ? (o.activeClassName ?? "bg-accent text-white shadow-sm") : o.disabled
+              ? "cursor-not-allowed text-slate-700"
+              : "text-slate-400 hover:text-slate-200"
           }`}
         >
           {o.label}

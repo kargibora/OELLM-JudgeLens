@@ -12,7 +12,6 @@ import { fmt, pct } from "../data";
 import {
   Card,
   ConceptLabel,
-  Explain,
   VerifiedBadge,
   conceptLabel,
   isUnnamed,
@@ -184,13 +183,6 @@ export default function ClusterExplorer({
 
   return (
     <div className="space-y-4">
-      <Explain>
-        Communities group features that fire together in this corpus. They are useful for
-        navigation and finding related or duplicated labels, but they do not merge feature
-        meanings: language, topic, format, and response policy can co-occur in one community.
-        Open individual members and their examples before assigning an umbrella interpretation.
-      </Explain>
-
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -321,7 +313,6 @@ export default function ClusterExplorer({
               <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h4 className="text-sm font-semibold text-slate-100">All member features</h4>
-                  <p className="mt-0.5 text-xs text-slate-500">Feature identity is preserved; repeated names remain separate axes.</p>
                 </div>
                 <label className="relative block w-full sm:w-72">
                   <Search size={13} className="pointer-events-none absolute left-2.5 top-2.5 text-slate-500" />
@@ -334,7 +325,7 @@ export default function ClusterExplorer({
                   />
                 </label>
               </div>
-              <div className="mt-3 max-h-[420px] space-y-1 overflow-auto pr-1">
+              <div className="mt-3 max-h-[240px] space-y-1 overflow-auto pr-1">
                 {members.map((feature) => (
                   <button
                     key={feature.feature_id}

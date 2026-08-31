@@ -179,8 +179,8 @@ export function PromptAtlasExamples({
         <h3 className="text-sm font-semibold text-slate-100">Prompt examples</h3>
         <div className="flex flex-wrap items-center gap-3">
           {hasSignedPoles && <Segmented value={pole} onChange={selectPole} size="xs" options={[
-            { value: "positive", label: "z > 0", title: concept },
-            { value: "negative", label: "z < 0", title: negativeConcept },
+            { value: "positive", label: "z > 0", title: concept, activeClassName: "bg-sky-500/85 text-white shadow-sm" },
+            { value: "negative", label: "z < 0", title: negativeConcept, activeClassName: "bg-amber-400 text-slate-950 shadow-sm" },
           ]} />}
           <EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} />
           <ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} />

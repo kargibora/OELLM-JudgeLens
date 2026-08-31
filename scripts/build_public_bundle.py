@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 
-SHARDED = {"examples/", "joint_examples/", "prompt_examples/"}
+SHARDED = {"examples/", "joint_examples/", "joint_examples_negative/", "prompt_examples/"}
 
 PROFILES: dict[str, dict[str, Any]] = {
     # Public keeps the aggregate analysis and enough stratified evidence to inspect
@@ -215,17 +215,19 @@ def _copy_coactivation(
     }
 
 
-def _joint_pairs(source: Path) -> set[tuple[int, int]]:
+def _joint_pairs(source: Path, elicitation_name: str = "elicitation.json",
+                 *, include_conditional: bool = True) -> set[tuple[int, int]]:
     """Return raw prompt/response pairs that the public UI can display."""
     pairs: set[tuple[int, int]] = set()
 
-    elicitation_path = source / "elicitation.json"
+    elicitation_path = source / elicitation_name
     if elicitation_path.exists():
         for edge in _read(elicitation_path).get("edges", []):
-            pairs.add((int(edge["px"]), int(edge["cy"])))
+            if float(edge.get("l2", 0)) > 0:
+                pairs.add((int(edge["px"]), int(edge["cy"])))
 
     conditional_path = source / "conditional.json"
-    if conditional_path.exists():
+    if include_conditional and conditional_path.exists():
         conditional = _read(conditional_path)
         raw = conditional.get("raw", conditional)
         for cell in raw.get("cells", []):
@@ -323,29 +325,35 @@ def build(
     if prompt_examples_out.is_dir():
         files.append("prompt_examples/")
 
-    allowed = _joint_pairs(source)
-    joint_out = output / "joint_examples"
     joint_pairs_written = 0
     joint_examples_written = 0
-    for src in sorted((source / "joint_examples").glob("*.json")):
-        shard = _read(src)
-        prompt_feature = int(shard.get("prompt_feature", src.stem))
-        kept: dict[str, list[dict[str, Any]]] = {}
-        for response_feature, rows in shard.get("examples", {}).items():
-            pair = (prompt_feature, int(response_feature))
-            if pair not in allowed or not rows:
-                continue
-            selected = _balanced_rows(rows, joint_examples, joint_examples_per_group)
-            kept[str(response_feature)] = _sanitize(selected, redactions)
-            joint_pairs_written += 1
-            joint_examples_written += len(selected)
-        if kept:
-            _write(
-                joint_out / src.name,
-                {"prompt_feature": prompt_feature, "examples": kept},
-            )
-    if joint_pairs_written:
-        files.append("joint_examples/")
+    for directory, elicitation_name, include_conditional in (
+        ("joint_examples", "elicitation.json", True),
+        ("joint_examples_negative", "elicitation_negative.json", False),
+    ):
+        allowed = _joint_pairs(source, elicitation_name,
+                               include_conditional=include_conditional)
+        written_here = 0
+        for src in sorted((source / directory).glob("*.json")):
+            shard = _read(src)
+            prompt_feature = int(shard.get("prompt_feature", src.stem))
+            kept: dict[str, list[dict[str, Any]]] = {}
+            for response_feature, rows in shard.get("examples", {}).items():
+                pair = (prompt_feature, int(response_feature))
+                if pair not in allowed or not rows:
+                    continue
+                selected = _balanced_rows(rows, joint_examples, joint_examples_per_group)
+                kept[str(response_feature)] = _sanitize(selected, redactions)
+                written_here += 1
+                joint_pairs_written += 1
+                joint_examples_written += len(selected)
+            if kept:
+                _write(
+                    output / directory / src.name,
+                    {"prompt_feature": prompt_feature, "examples": kept},
+                )
+        if written_here:
+            files.append(f"{directory}/")
 
     compact_manifest = {
         **manifest,

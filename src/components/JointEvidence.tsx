@@ -15,6 +15,7 @@ export default function JointEvidence({
   promptName,
   responseName,
   kind,
+  pole = "positive",
   onOpenPrompt,
   onOpenBehavior,
 }: {
@@ -23,10 +24,12 @@ export default function JointEvidence({
   promptName: string | null | undefined;
   responseName: string | null | undefined;
   kind: EvidenceKind;
+  pole?: "positive" | "negative";
   onOpenPrompt?: () => void;
   onOpenBehavior?: () => void;
 }) {
-  const shard = useDataArtifact<JointExampleShard>(`joint_examples/${promptFeature}.json`);
+  const directory = pole === "negative" ? "joint_examples_negative" : "joint_examples";
+  const shard = useDataArtifact<JointExampleShard>(`${directory}/${promptFeature}.json`);
   const allExamples = shard?.examples[String(responseFeature)] ?? [];
   const { filters, setGroup } = useAnalysisFilters();
   const group = filters.group;
@@ -48,7 +51,7 @@ export default function JointEvidence({
             <h4 className="text-sm font-semibold text-slate-100">Matched evidence</h4>
           </div>
           <p className="mt-1 max-w-3xl text-xs leading-relaxed text-slate-400">
-            A concrete response where both <ConceptLabel id={promptFeature} name={promptName} wrap className="text-slate-200" /> and{" "}
+            A concrete response where <ConceptLabel id={promptFeature} name={promptName} wrap className="text-slate-200" /> and{" "}
             <ConceptLabel id={responseFeature} name={responseName} wrap className="text-slate-200" /> activate strongly.
           </p>
         </div>
@@ -82,7 +85,7 @@ export default function JointEvidence({
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-        Selected because both concepts have strong positive scores. This lets you inspect the link,
+        Selected because the prompt pole and answer concept are both strongly expressed. This lets you inspect the link,
         but {kind === "preference" ? "one example does not explain the full win-rate result" : "appearing together does not show that one caused the other"}.
         Checked label cutoffs were not used for this saved evidence.
       </p>

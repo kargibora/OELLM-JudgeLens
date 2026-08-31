@@ -1,6 +1,9 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from scripts.build_public_bundle import PROFILES, _balanced_rows
+from scripts.build_public_bundle import PROFILES, _balanced_rows, _joint_pairs
 
 
 class PublicBundleTest(unittest.TestCase):
@@ -38,6 +41,19 @@ class PublicBundleTest(unittest.TestCase):
 
         self.assertEqual({row["pole"] for row in kept}, {"positive", "negative"})
         self.assertEqual([row["id"] for row in kept], [0, 2])
+
+    def test_negative_joint_pairs_follow_the_negative_elicitation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "elicitation_negative.json").write_text(json.dumps({"edges": [
+                {"px": 3, "cy": 7, "l2": 1.2},
+                {"px": 3, "cy": 8, "l2": -0.4},
+            ]}))
+
+            pairs = _joint_pairs(
+                root, "elicitation_negative.json", include_conditional=False)
+
+            self.assertEqual(pairs, {(3, 7)})
 
 
 if __name__ == "__main__":

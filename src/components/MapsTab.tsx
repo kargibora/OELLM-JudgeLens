@@ -21,10 +21,10 @@ import PromptConceptDetailDrawer from "./PromptConceptDetailDrawer";
 
 type Sub = "features" | "featureClusters" | "promptFeatures" | "promptClusters" | "responses" | "battle" | "prompt";
 const SUBS: { id: Sub; label: string; artifact: string }[] = [
-  { id: "features", label: "Response feature atlas", artifact: "feature_map.json" },
   { id: "featureClusters", label: "Response communities", artifact: "feature_clusters.json" },
-  { id: "promptFeatures", label: "Prompt feature atlas", artifact: "prompt_feature_map.json" },
   { id: "promptClusters", label: "Prompt communities", artifact: "prompt_feature_clusters.json" },
+  { id: "features", label: "Response feature atlas", artifact: "feature_map.json" },
+  { id: "promptFeatures", label: "Prompt feature atlas", artifact: "prompt_feature_map.json" },
   { id: "responses", label: "Response scatter", artifact: "response_map.json" },
   { id: "battle", label: "Battle scatter", artifact: "map.json" },
   { id: "prompt", label: "Prompt scatter", artifact: "prompt_map.json" },
