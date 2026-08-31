@@ -27,6 +27,18 @@ class PublicBundleTest(unittest.TestCase):
         self.assertEqual(modes, {"strongest", "random_present", "near_boundary"})
         self.assertEqual(len({row["id"] for row in kept}), len(kept))
 
+    def test_balanced_rows_keep_evidence_for_each_signed_pole(self):
+        rows = [
+            {"id": 0, "pole": "positive"},
+            {"id": 1, "pole": "positive"},
+            {"id": 2, "pole": "negative"},
+        ]
+
+        kept = _balanced_rows(rows, first=1)
+
+        self.assertEqual({row["pole"] for row in kept}, {"positive", "negative"})
+        self.assertEqual([row["id"] for row in kept], [0, 2])
+
 
 if __name__ == "__main__":
     unittest.main()

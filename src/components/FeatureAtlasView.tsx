@@ -14,6 +14,7 @@ import {
   Card,
   ConceptLabel,
   Explain,
+  Segmented,
   SkeletonList,
   VerifiedBadge,
   conceptLabel,
@@ -55,7 +56,8 @@ const STATUS_COLORS = {
 const featureFamily = (feature: Feature | undefined) => answerTypeOf(feature);
 
 const statusOf = (feature: Feature | undefined) => {
-  if (!feature || isUnnamed(feature.concept)) return "unnamed" as const;
+  if (!feature || (isUnnamed(feature.concept) && isUnnamed(feature.negative_concept)))
+    return "unnamed" as const;
   if (feature.fidelity_pass === true) return "verified" as const;
   if (feature.fidelity_pass === false) return "failed" as const;
   return "untested" as const;
@@ -122,18 +124,31 @@ export function AtlasExamples({ fid, concept, initialGroup = "" }: { fid: number
   );
 }
 
-export function PromptAtlasExamples({ fid, concept, initialGroup = "" }: { fid: number; concept: string; initialGroup?: string }) {
+export function PromptAtlasExamples({
+  fid,
+  concept,
+  negativeConcept,
+  initialGroup = "",
+}: {
+  fid: number;
+  concept: string;
+  negativeConcept?: string;
+  initialGroup?: string;
+}) {
   const raw = usePromptExamples(fid);
   const { filters, setGroup } = useAnalysisFilters();
   const group = initialGroup || filters.group;
   const [mode, setMode] = useState<EvidenceMode>("strongest");
+  const [pole, setPole] = useState<"positive" | "negative">("positive");
   const [exampleIndex, setExampleIndex] = useState(0);
-  useEffect(() => { setMode("strongest"); setExampleIndex(0); }, [fid]);
-  useEffect(() => { setExampleIndex(0); }, [group, mode]);
+  useEffect(() => { setMode("strongest"); setPole("positive"); setExampleIndex(0); }, [fid]);
+  useEffect(() => { setExampleIndex(0); }, [group, mode, pole]);
   const allExamples = useMemo(
-    () => (raw ?? []).slice().sort((a: PromptExample, b: PromptExample) => b.z - a.z),
-    [raw],
+    () => (raw ?? []).filter((row) => !row.pole || row.pole === pole)
+      .slice().sort((a: PromptExample, b: PromptExample) => Math.abs(b.z) - Math.abs(a.z)),
+    [raw, pole],
   );
+  const hasSignedPoles = (raw ?? []).some((row) => row.pole === "negative");
   const groups = useMemo(() => [...new Set(allExamples.map((row) => row.group).filter((value): value is string => Boolean(value)))].sort(), [allExamples]);
   const modes = useMemo(() => evidenceModes(allExamples), [allExamples]);
   const effectiveMode = modes.includes(mode) ? mode : modes[0] ?? "strongest";
@@ -148,8 +163,16 @@ export function PromptAtlasExamples({ fid, concept, initialGroup = "" }: { fid: 
   return (
     <Card>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-slate-100">Strongest prompt examples</h3>
-        <div className="flex flex-wrap items-center gap-3"><EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} /><ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} /><EvidencePager index={Math.min(exampleIndex, Math.max(0, examples.length - 1))} count={examples.length} onChange={setExampleIndex} /></div>
+        <h3 className="text-sm font-semibold text-slate-100">Prompt examples</h3>
+        <div className="flex flex-wrap items-center gap-3">
+          {hasSignedPoles && <Segmented value={pole} onChange={setPole} size="xs" options={[
+            { value: "positive", label: "z > 0", title: concept },
+            { value: "negative", label: "z < 0", title: negativeConcept },
+          ]} />}
+          <EvidenceModeSelect modes={modes} value={effectiveMode} onChange={setMode} />
+          <ExampleGroupSelect groups={groups} value={group} onChange={(value) => setGroup(value, groupColumn)} column={groupColumn} />
+          <EvidencePager index={Math.min(exampleIndex, Math.max(0, examples.length - 1))} count={examples.length} onChange={setExampleIndex} />
+        </div>
       </div>
       {raw === null ? (
         <p className="text-sm text-slate-500">No prompt examples were exported for {concept}.</p>
@@ -245,6 +268,7 @@ export default function FeatureAtlasView({
     return String(point.feature_id) === q
       || `feature ${point.feature_id}`.includes(q)
       || (feature?.concept ?? "").toLowerCase().includes(q)
+      || (feature?.negative_concept ?? "").toLowerCase().includes(q)
       || (feature?.feature_summary ?? "").toLowerCase().includes(q);
   };
   const filtered = useMemo(() => projected.filter(passesFilter), [projected, byId, status, family]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -505,7 +529,18 @@ export default function FeatureAtlasView({
             <Card>
               <div className="min-w-0">
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{kind === "prompt" ? "Prompt concept" : "Answer concept"} {selectedId}</div>
-                <h3 className="text-lg font-semibold leading-snug text-slate-50"><ConceptLabel id={selectedId} name={selected?.concept} wrap /></h3>
+                {kind === "prompt" && selected?.negative_concept !== undefined ? (
+                  <dl className="grid gap-3 sm:grid-cols-2">
+                    <div className="border-l-2 border-sky-400/60 pl-3">
+                      <dt className="font-mono text-[10px] text-sky-300/80">z &gt; 0</dt>
+                      <dd className="mt-1 text-sm font-semibold leading-snug text-slate-50">{selected?.positive_concept || selected?.concept || `feature ${selectedId}`}</dd>
+                    </div>
+                    <div className="border-l-2 border-amber-400/60 pl-3">
+                      <dt className="font-mono text-[10px] text-amber-300/80">z &lt; 0</dt>
+                      <dd className="mt-1 text-sm font-semibold leading-snug text-slate-50">{selected.negative_concept || `feature ${selectedId} (negative pole)`}</dd>
+                    </div>
+                  </dl>
+                ) : <h3 className="text-lg font-semibold leading-snug text-slate-50"><ConceptLabel id={selectedId} name={selected?.concept} wrap /></h3>}
                 <div className="mt-2"><VerifiedBadge pass={selected?.fidelity_pass} n={selected?.fidelity_n} /></div>
               </div>
               {selected?.feature_summary && <p className="mt-3 break-words text-sm leading-relaxed text-slate-400">{selected.feature_summary}</p>}
@@ -547,7 +582,8 @@ export default function FeatureAtlasView({
             </Card>
           </div>
           {kind === "prompt"
-            ? <PromptAtlasExamples fid={selectedId} concept={selectedName} />
+            ? <PromptAtlasExamples fid={selectedId} concept={selectedName}
+                negativeConcept={selected?.negative_concept} />
             : <AtlasExamples fid={selectedId} concept={selectedName} />}
         </div>
       )}

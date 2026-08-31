@@ -363,9 +363,22 @@ export default function ClusterExplorer({
                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   {kind === "prompt" ? "Prompt" : "Response"} feature {selectedFeatureId}
                 </div>
-                <h3 className="mt-1 text-lg font-semibold leading-snug text-slate-50">
-                  <ConceptLabel id={selectedFeatureId} name={selectedFeature.concept} wrap />
-                </h3>
+                {kind === "prompt" && selectedFeature.negative_concept !== undefined ? (
+                  <dl className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                    <div className="border-l-2 border-sky-400/60 pl-3">
+                      <dt className="font-mono text-[10px] text-sky-300/80">z &gt; 0</dt>
+                      <dd className="mt-1 text-sm font-semibold leading-snug text-slate-50">{selectedFeature.positive_concept || selectedFeature.concept || `feature ${selectedFeatureId}`}</dd>
+                    </div>
+                    <div className="border-l-2 border-amber-400/60 pl-3">
+                      <dt className="font-mono text-[10px] text-amber-300/80">z &lt; 0</dt>
+                      <dd className="mt-1 text-sm font-semibold leading-snug text-slate-50">{selectedFeature.negative_concept || `feature ${selectedFeatureId} (negative pole)`}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <h3 className="mt-1 text-lg font-semibold leading-snug text-slate-50">
+                    <ConceptLabel id={selectedFeatureId} name={selectedFeature.concept} wrap />
+                  </h3>
+                )}
                 {selectedFeature.feature_summary && <p className="mt-3 text-sm leading-relaxed text-slate-400">{selectedFeature.feature_summary}</p>}
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
                   <div><dt className="text-slate-600">Verification</dt><dd className="mt-1 text-slate-200">{selectedFeature.fidelity_pass === true ? "passed" : selectedFeature.fidelity_pass === false ? "did not pass" : "not tested"}</dd></div>
@@ -382,7 +395,9 @@ export default function ClusterExplorer({
                 )}
               </Card>
               {kind === "prompt"
-                ? <PromptAtlasExamples fid={selectedFeatureId} concept={conceptLabel(selectedFeatureId, selectedFeature.concept)} />
+                ? <PromptAtlasExamples fid={selectedFeatureId}
+                    concept={conceptLabel(selectedFeatureId, selectedFeature.concept)}
+                    negativeConcept={selectedFeature.negative_concept} />
                 : <AtlasExamples fid={selectedFeatureId} concept={conceptLabel(selectedFeatureId, selectedFeature.concept)} />}
             </div>
           )}

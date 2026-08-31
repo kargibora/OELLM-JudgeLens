@@ -60,7 +60,12 @@ export default function PromptMapView(
       }
       return items.sort((a, b) => a.id - b.id);
     }
-    return map.features.map((fid, i) => ({ id: fid, label: map.concepts[i], color: PALETTE[i % PALETTE.length] }));
+    return map.features.map((fid, i) => {
+      const positive = map.concepts[i] ?? `feature ${fid} (positive pole)`;
+      const negative = map.negative_concepts?.[i];
+      return { id: fid, label: negative && negative !== positive ? `${positive} ↔ ${negative}` : positive,
+               color: PALETTE[i % PALETTE.length] };
+    });
   }, [map, mode]);
 
   useEffect(() => {
@@ -149,19 +154,19 @@ export default function PromptMapView(
   };
 
   const hoverLabel = (p: PromptMapPoint): string => {
-    if (mode === "behavior" && p.pc < 0) return "no verified prompt behavior fired";
+    if (mode === "behavior" && p.pc < 0) return p.fc ?? "no prompt behavior fired";
     if (p.f < 0) return "no verified prompt feature fired";
     return mode === "behavior"
       ? map.behaviors?.[String(p.pc)] ?? `behavior ${p.pc}`
-      : map.concepts[featIdx.get(p.f) ?? -1] ?? `feature ${p.f}`;
+      : p.fc ?? map.concepts[featIdx.get(p.f) ?? -1] ?? `feature ${p.f}`;
   };
 
   return (
     <div className="flex flex-col gap-4">
       <Explain>
         Each dot is one battle, placed by UMAP of its <b>prompt</b> latents — prompts that ask for
-        similar things sit together. <b>Colour</b> = the dominant prompt behaviour. <b>Click a dot</b>
-        {" "}to read the prompt and see which prompt features fire{hasLabels ? (
+        similar things sit together. <b>Colour</b> = the dominant prompt axis. <b>Click a dot</b>
+        {" "}to read the prompt and see which prompt-axis poles fire{hasLabels ? (
           <> and which features the <i>winning</i> response expresses — <span className="text-good">★
           marks the ones that are statistically significant in the Δ relation</span>, so you can
           verify a concept on a real example.</>
@@ -255,12 +260,17 @@ export default function PromptMapView(
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-lg border border-edge bg-ink/60 p-2 text-sm">
               <div className="mb-1 text-xs uppercase tracking-wider text-slate-500">
-                prompt features firing
+                prompt-axis poles
               </div>
               {picked.pf.length === 0 && <div className="text-slate-500">—</div>}
               {picked.pf.map((f) => (
                 <div key={f.id} className="flex items-baseline justify-between gap-2 py-0.5">
-                  <span className="text-slate-300">{f.concept}</span>
+                  <span className="min-w-0 text-slate-300">
+                    <span className={`mr-1.5 font-mono text-[10px] ${f.z < 0 ? "text-amber-300/75" : "text-sky-300/75"}`}>
+                      {f.z < 0 ? "z < 0" : "z > 0"}
+                    </span>
+                    {f.concept}
+                  </span>
                   <span className="font-mono text-xs text-slate-500">{f.z.toFixed(2)}</span>
                 </div>
               ))}

@@ -43,16 +43,23 @@ export default function PromptConceptDetailDrawer({
     <FeatureDetailDrawerShell kind="prompt" featureId={featureId} feature={feature} onClose={onClose}>
       <Card className="overflow-hidden bg-gradient-to-br from-panel/90 to-ink/60">
         <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Interpretation</div>
-        <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-slate-300">
+        {feature?.negative_status !== undefined || feature?.negative_concept !== undefined ? <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-xl border border-sky-400/20 bg-sky-400/[0.045] px-3 py-3">
+            <dt className="font-mono text-[10px] text-sky-300/75">z &gt; 0</dt>
+            <dd className="mt-1 text-sm leading-snug text-slate-100">{feature?.positive_concept || feature?.concept || "Unnamed"}</dd>
+            <dd className="mt-2 text-[11px] text-slate-500">{pct(group ? promptShare : feature?.positive_fire_rate ?? promptShare, 1)} of prompts</dd>
+          </div>
+          <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.045] px-3 py-3">
+            <dt className="font-mono text-[10px] text-amber-300/75">z &lt; 0</dt>
+            <dd className="mt-1 text-sm leading-snug text-slate-100">{feature?.negative_concept || "Unnamed"}</dd>
+            <dd className="mt-2 text-[11px] text-slate-500">{pct(feature?.negative_fire_rate, 1)} of prompts</dd>
+          </div>
+        </dl> : <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-slate-300">
           {feature?.feature_summary || "This name was suggested by an LLM. Check the prompt examples before using it."}
-        </p>
-        <dl className="mt-5 grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Prompt share{group ? ` · ${group}` : ""}</dt><dd className="mt-1 text-sm text-slate-100">{pct(promptShare, 2)}</dd></div>
-          <div className="rounded-xl border border-edge/70 bg-ink/45 px-3 py-2.5"><dt className="text-slate-500">Label agreement</dt><dd className="mt-1 text-sm text-slate-100">{pct(feature?.agreement, 0)}</dd></div>
-        </dl>
+        </p>}
       </Card>
 
-          <PromptAtlasExamples fid={featureId} concept={name} />
+          <PromptAtlasExamples fid={featureId} concept={name} negativeConcept={feature?.negative_concept} />
 
           <Card>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prompt relationships</div>

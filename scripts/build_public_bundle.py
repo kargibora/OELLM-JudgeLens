@@ -128,6 +128,7 @@ def _balanced_indices(
     first: int | None,
     per_group: int = 0,
     per_mode: int = 0,
+    per_pole: int = 1,
 ) -> list[int]:
     """Select ranked rows plus coverage across exported group and evidence-mode fields."""
     if first is None:
@@ -151,8 +152,25 @@ def _balanced_indices(
                 if added >= limit:
                     break
 
+    def ensure_by(field: str, limit: int) -> None:
+        if limit <= 0:
+            return
+        values = sorted({str(row.get(field, "")).strip() for row in rows}
+                        - {"", "None", "nan"})
+        for value in values:
+            have = sum(str(rows[index].get(field, "")).strip() == value for index in selected)
+            for index, row in enumerate(rows):
+                if have >= limit:
+                    break
+                if index in seen or str(row.get(field, "")).strip() != value:
+                    continue
+                selected.append(index)
+                seen.add(index)
+                have += 1
+
     add_by("group", per_group)
     add_by("selection_kind", per_mode)
+    ensure_by("pole", per_pole)
     return selected
 
 
@@ -161,8 +179,10 @@ def _balanced_rows(
     first: int | None,
     per_group: int = 0,
     per_mode: int = 0,
+    per_pole: int = 1,
 ) -> list[dict[str, Any]]:
-    return [rows[index] for index in _balanced_indices(rows, first, per_group, per_mode)]
+    return [rows[index] for index in _balanced_indices(
+        rows, first, per_group, per_mode, per_pole)]
 
 
 def _copy_coactivation(

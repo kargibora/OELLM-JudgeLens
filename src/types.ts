@@ -38,6 +38,12 @@ export type BehaviorCategory = "general" | "context_specific" | "prompt_content"
 export interface Feature {
   feature_id: number;
   concept?: string;
+  positive_concept?: string;
+  negative_concept?: string;
+  positive_status?: string;
+  negative_status?: string;
+  positive_fire_rate?: number;
+  negative_fire_rate?: number;
   type?: string; // coarse label: capability | format | style | topic | safety
   corr_confound_len?: number; // |corr|>=0.3 ⇒ "does more" may be "does longer"
   correlation?: number;
@@ -230,8 +236,10 @@ export interface MapData {
 export interface PromptMapPoint {
   x: number;
   y: number;
-  f: number; // dominant positive-pole prompt feature_id, or -1 when none fires
-  m?: number; // its activation magnitude
+  f: number; // dominant prompt axis, or -1 when none fires
+  m?: number; // absolute activation magnitude
+  pole?: "positive" | "negative";
+  fc?: string; // pole-specific concept label
   pc: number; // prompt concept/cluster key (matches delta keyspace), or -1
   ma: string;
   mb: string;
@@ -239,7 +247,7 @@ export interface PromptMapPoint {
   p: string; // prompt text (clipped)
   ca?: string; // response A (clipped)
   cb?: string; // response B (clipped)
-  pf: { id: number; concept: string; z: number }[]; // prompt features firing (positive)
+  pf: { id: number; concept: string; z: number; pole?: "positive" | "negative" }[];
   cf: { id: number; concept: string; z: number; delta: number | null; sig: boolean }[]; // completion contrast (+ winner / − loser)
 }
 export interface PromptMapData {
@@ -248,6 +256,7 @@ export interface PromptMapData {
   mode?: string;
   features: number[];
   concepts: string[];
+  negative_concepts?: string[];
   points: PromptMapPoint[];
   clusters?: number[]; // cluster_id parallel to `features`
   behaviors?: Record<string, string>;
@@ -312,6 +321,12 @@ export interface BiasRow {
 export interface PromptFeature {
   feature_id: number;
   concept?: string;
+  positive_concept?: string;
+  negative_concept?: string;
+  positive_status?: string;
+  negative_status?: string;
+  positive_fire_rate?: number;
+  negative_fire_rate?: number;
   fidelity_pass?: boolean;
   cluster_id?: number;
   behavior?: string;
@@ -357,6 +372,7 @@ export interface FeatureClusterBundle {
 
 export interface PromptExample {
   z: number;
+  pole?: "positive" | "negative";
   activation_percentile?: number;
   activation_reference?: "positive_activation" | string;
   selection_kind?: "strongest" | "group_strongest" | "random_present" | "near_threshold" | "near_boundary" | string;
