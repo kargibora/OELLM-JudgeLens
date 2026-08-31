@@ -151,6 +151,7 @@ function PromptRoute({
   // dedicated prompt artifact here; substituting response pairs produces plausible but
   // incorrect names and counts.
   const promptCoactivation = useDataArtifact<ConceptCoactivationType>("prompt_coactivation.json");
+  const promptNegativeCoactivation = useDataArtifact<ConceptCoactivationType>("prompt_coactivation_negative.json");
   const [wantExamples, setWantExamples] = useState(false);
   const reportBattles = useDataArtifact<ReportBattles>(wantExamples ? "report_battles.json" : null);
   const examplesAvailable = client.hasArtifact("report_battles.json");
@@ -172,6 +173,7 @@ function PromptRoute({
       promptFeatures={promptFeatures ?? null}
       responseFeatures={bundle.features}
       coactivation={promptCoactivation ?? null}
+      negativeCoactivation={promptNegativeCoactivation ?? null}
       hasLabels={bundle.meta.has_preference ?? true}
       focus={focus}
       onJumpFeature={onJumpFeature}

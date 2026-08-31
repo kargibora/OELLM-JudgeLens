@@ -20,11 +20,14 @@ export default function PromptConceptDetailDrawer({
   onSelectFeature: (featureId: number) => void;
 }) {
   const feature = features.find((row) => row.feature_id === featureId);
-  const coactivation = useDataArtifact<ConceptCoactivation>("prompt_coactivation.json");
+  const positiveCoactivation = useDataArtifact<ConceptCoactivation>("prompt_coactivation.json");
+  const negativeCoactivation = useDataArtifact<ConceptCoactivation>("prompt_coactivation_negative.json");
   const distribution = useDataArtifact<ConceptDistribution>("prompt_concept_distribution.json");
   const { filters } = useAnalysisFilters();
   const group = filters.group;
+  const [pole, setPole] = useState<"positive" | "negative">("positive");
   const [activePair, setActivePair] = useState<string | null>(null);
+  const coactivation = pole === "negative" ? negativeCoactivation : positiveCoactivation;
 
   useEffect(() => { setActivePair(null); }, [featureId]);
 
@@ -59,7 +62,8 @@ export default function PromptConceptDetailDrawer({
         </p>}
       </Card>
 
-          <PromptAtlasExamples fid={featureId} concept={name} negativeConcept={feature?.negative_concept} />
+          <PromptAtlasExamples fid={featureId} concept={name} negativeConcept={feature?.negative_concept}
+            pole={pole} onPoleChange={setPole} />
 
           <Card>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prompt relationships</div>

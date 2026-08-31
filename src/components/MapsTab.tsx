@@ -171,11 +171,14 @@ function PromptFeatureAtlasPane({
   const map = useMap<FeatureMapData>("prompt_feature_map.json");
   const promptFeatures = useDataArtifact<PromptFeatures>("prompt_features.json");
   const coactivation = useDataArtifact<ConceptCoactivation>("prompt_coactivation.json");
-  if (map === undefined || promptFeatures === undefined || coactivation === undefined)
+  const negativeCoactivation = useDataArtifact<ConceptCoactivation>("prompt_coactivation_negative.json");
+  if (map === undefined || promptFeatures === undefined || coactivation === undefined
+      || negativeCoactivation === undefined)
     return <Loading what="prompt feature atlas" />;
   const features: Feature[] = (promptFeatures?.features ?? []).map((feature) => ({ ...feature }));
   return <FeatureAtlasView kind="prompt" map={map} features={features}
-    coactivation={coactivation} onOpenFeature={onOpenPrompt}
+    coactivation={coactivation} negativeCoactivation={negativeCoactivation}
+    onOpenFeature={onOpenPrompt}
     onInspectFeature={onInspectPrompt} />;
 }
 

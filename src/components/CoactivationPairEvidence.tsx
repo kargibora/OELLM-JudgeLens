@@ -94,8 +94,8 @@ export default function CoactivationPairEvidence({
       )}
       <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
         {hasActivationValues
-          ? "Both concept scores are positive. The strongest balanced matches are shown first."
-          : "These examples were selected because both concept scores were positive; this older dataset does not include the scores."}
+          ? `Both concept scores are ${coactivation.prompt_pole === "negative" ? "negative" : "positive"}. The strongest balanced matches are shown first.`
+          : `These examples were selected because both concept scores were ${coactivation.prompt_pole === "negative" ? "negative" : "positive"}; this older dataset does not include the scores.`}
         {" "}Appearing together does not prove that either concept name is correct or that one causes the other.
       </p>
     </div>

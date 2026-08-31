@@ -32,6 +32,7 @@ export default function PromptBrowser({
   promptFeatures,
   responseFeatures,
   coactivation,
+  negativeCoactivation,
   hasLabels = true,
   focus,
   onJumpFeature,
@@ -45,6 +46,7 @@ export default function PromptBrowser({
   promptFeatures: PromptFeatures | null;
   responseFeatures: Feature[];
   coactivation: ConceptCoactivation | null;
+  negativeCoactivation: ConceptCoactivation | null;
   hasLabels?: boolean;
   focus?: { pc: number } | null;
   onJumpFeature?: (cf: number) => void;
@@ -337,9 +339,10 @@ export default function PromptBrowser({
               concept={selectedFeature?.positive_concept || selName || `feature ${sel}`}
               negativeConcept={selectedFeature?.negative_concept}
               pole={hasSignedPoles ? selPole : undefined} onPoleChange={setSelPole} />}
+            {!clustered && <PromptCoactivationPanel
+              coactivation={selPole === "negative" ? negativeCoactivation : coactivation}
+              pc={sel} onSelectPrompt={setSel} />}
             {(!hasSignedPoles || selPole === "positive") && <>
-              {!clustered && <PromptCoactivationPanel coactivation={coactivation} pc={sel}
-                onSelectPrompt={(featureId) => { setSel(featureId); setSelPole("positive"); }} />}
               {!clustered && <ElicitsPanel elicitation={elicitation} pc={sel} promptName={selName} features={responseFeatures} onJumpFeature={onJumpFeature} />}
               {hasLabels && <WinsPanel cond={cond} pc={sel} promptName={selName} features={responseFeatures} showEvidence={!clustered} onJumpFeature={onJumpFeature} />}
             </>}

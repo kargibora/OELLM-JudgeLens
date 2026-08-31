@@ -633,5 +633,6 @@ export interface ConceptCoactivation {
   min_pair_count: number;
   truncated: boolean;
   code_array: string;
+  prompt_pole?: "positive" | "negative";
   pairs: CoactivationPair[];
 }

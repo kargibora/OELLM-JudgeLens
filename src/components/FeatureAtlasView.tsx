@@ -216,6 +216,7 @@ export default function FeatureAtlasView({
   map,
   features,
   coactivation,
+  negativeCoactivation,
   kind = "response",
   onOpenFeature,
   onInspectFeature,
@@ -224,6 +225,7 @@ export default function FeatureAtlasView({
   map: FeatureMapData | null;
   features: Feature[];
   coactivation: ConceptCoactivation | null | undefined;
+  negativeCoactivation?: ConceptCoactivation | null | undefined;
   kind?: "response" | "prompt";
   onOpenFeature?: (featureId: number) => void;
   onInspectFeature?: (featureId: number) => void;
@@ -243,6 +245,7 @@ export default function FeatureAtlasView({
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [promptPole, setPromptPole] = useState<"positive" | "negative">("positive");
   const { filters, setAnswerType } = useAnalysisFilters();
   const family = filters.answerType;
   const [colorMode, setColorMode] = useState<ColorMode>(kind === "prompt" ? "verification" : "family");
@@ -301,15 +304,17 @@ export default function FeatureAtlasView({
 
   const selected = selectedId == null ? undefined : byId.get(selectedId);
   const selectedPoint = selectedId == null ? undefined : pointById.get(selectedId);
+  const activeCoactivation = kind === "prompt" && promptPole === "negative"
+    ? negativeCoactivation : coactivation;
   const pairs = useMemo(() => {
-    if (selectedId == null || !coactivation) return [] as CoactivationPair[];
-    return coactivation.pairs
+    if (selectedId == null || !activeCoactivation) return [] as CoactivationPair[];
+    return activeCoactivation.pairs
       .filter((pair) => pair.a === selectedId || pair.b === selectedId)
       .filter((pair) => family === "all"
         || (featureFamily(byId.get(pair.a)) === family && featureFamily(byId.get(pair.b)) === family))
       .sort((a, b) => b.lift - a.lift || b.count - a.count)
       .slice(0, 16);
-  }, [coactivation, selectedId, family, byId]);
+  }, [activeCoactivation, selectedId, family, byId]);
   const edgeIds = useMemo(() => new Set(pairs.flatMap((pair) => [pair.a, pair.b])), [pairs]);
 
   const colorOf = (point: FeatureMapPoint) => {
@@ -575,7 +580,7 @@ export default function FeatureAtlasView({
                 <h3 className="text-sm font-semibold text-slate-100">Often appears with</h3>
                 <span className="text-xs text-slate-500">{pairs.length} retained</span>
               </div>
-              {coactivation === undefined ? <SkeletonList n={3} itemClass="h-10" /> : pairs.length === 0 ? (
+              {activeCoactivation === undefined ? <SkeletonList n={3} itemClass="h-10" /> : pairs.length === 0 ? (
                 <p className="text-sm text-slate-500">No saved concept pair for this feature.</p>
               ) : (
                 <div className="space-y-1">
@@ -596,7 +601,8 @@ export default function FeatureAtlasView({
           </div>
           {kind === "prompt"
             ? <PromptAtlasExamples fid={selectedId} concept={selectedName}
-                negativeConcept={selected?.negative_concept} />
+                negativeConcept={selected?.negative_concept}
+                pole={promptPole} onPoleChange={setPromptPole} />
             : <AtlasExamples fid={selectedId} concept={selectedName} />}
         </div>
       )}
