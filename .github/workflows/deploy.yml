@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  PREFSCOPE_DATA_RELEASE: viewer-data-m2048-signed-poles-2026-08-31
+  PREFSCOPE_DATA_RELEASE: viewer-data-m2048-atlas-signed-relations-2026-08-31
   PREFSCOPE_DATA_ASSET: completion_m2048-public.tar.gz
 
 permissions:
