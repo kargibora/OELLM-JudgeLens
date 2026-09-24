@@ -8,9 +8,9 @@ on:
 env:
   PREFSCOPE_DATA_RELEASE: viewer-data-m2048-signed-coactivation-2026-08-31
   PREFSCOPE_DATA_ASSET: completion_m2048-public.tar.gz
-  DOLCI_VIEWER_RELEASE: dolci-prompt256-response512-reviewed-v2
+  DOLCI_VIEWER_RELEASE: dolci-prompt256-response512-reviewed-v3
   DOLCI_VIEWER_ASSET: dolci-prompt256-response512-viewer.zip
-  DOLCI_VIEWER_SHA256: 54107e59f986de1c3c6e5202a5fab05e03d09e96e27adcb839474e52ce323f40
+  DOLCI_VIEWER_SHA256: feef5ec3a4ddd9ac91783e7708cd304975ba40a55aa0f5d712b945aa22c595ab
 
 permissions:
   contents: read
