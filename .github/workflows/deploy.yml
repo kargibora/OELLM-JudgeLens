@@ -8,9 +8,9 @@ on:
 env:
   PREFSCOPE_DATA_RELEASE: viewer-data-m2048-signed-coactivation-2026-08-31
   PREFSCOPE_DATA_ASSET: completion_m2048-public.tar.gz
-  DOLCI_VIEWER_RELEASE: dolci-prompt256-response512-reviewed-v1
+  DOLCI_VIEWER_RELEASE: dolci-prompt256-response512-reviewed-v2
   DOLCI_VIEWER_ASSET: dolci-prompt256-response512-viewer.zip
-  DOLCI_VIEWER_SHA256: b9daa898b56b3b1ba58150cedd9ea2880e610fc05fa0738ae0fc6ca829f7a299
+  DOLCI_VIEWER_SHA256: 54107e59f986de1c3c6e5202a5fab05e03d09e96e27adcb839474e52ce323f40
 
 permissions:
   contents: read
@@ -54,8 +54,9 @@ jobs:
             --pattern "$DOLCI_VIEWER_ASSET" --dir "$RUNNER_TEMP"
           echo "$DOLCI_VIEWER_SHA256  $RUNNER_TEMP/$DOLCI_VIEWER_ASSET" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/$DOLCI_VIEWER_ASSET" -d "$RUNNER_TEMP/dolci-viewer"
-          mkdir -p dist/dolci-prompt256-response512-viewer
-          cp -a "$RUNNER_TEMP/dolci-viewer/site/." dist/dolci-prompt256-response512-viewer/
+          mkdir -p dist/dolci dist/dolci-prompt256-response512-viewer
+          cp -a "$RUNNER_TEMP/dolci-viewer/site/." dist/dolci/
+          cp scripts/dolci-redirect.html dist/dolci-prompt256-response512-viewer/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
