@@ -14,6 +14,9 @@ env:
   DOLCI_EXPANDED_RELEASE: dolci-prompt256-response512-expanded-v4
   DOLCI_EXPANDED_ASSET: dolci-prompt256-response512-expanded-viewer.zip
   DOLCI_EXPANDED_SHA256: 8e35ea2c9ecbb58a6986c1877414014b9a04a11728077247dc18e560554c1045
+  DOLCI_FAST_RELEASE: dolci-prompt256-response512-fast-v5
+  DOLCI_FAST_ASSET: dolci-prompt256-response512-fast-viewer.zip
+  DOLCI_FAST_SHA256: aec3a1d2e5e46a42bad6fa35b8694faf7ff9ae3530c327683a2355f087cb344f
 
 permissions:
   contents: read
@@ -70,6 +73,16 @@ jobs:
           unzip -q "$RUNNER_TEMP/$DOLCI_EXPANDED_ASSET" -d "$RUNNER_TEMP/dolci-expanded"
           mkdir -p dist/dolci-expanded
           cp -a "$RUNNER_TEMP/dolci-expanded/site/." dist/dolci-expanded/
+      - name: Include the fast Dolci Viewer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$DOLCI_FAST_RELEASE" \
+            --pattern "$DOLCI_FAST_ASSET" --dir "$RUNNER_TEMP"
+          echo "$DOLCI_FAST_SHA256  $RUNNER_TEMP/$DOLCI_FAST_ASSET" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/$DOLCI_FAST_ASSET" -d "$RUNNER_TEMP/dolci-fast"
+          mkdir -p dist/dolci-fast
+          cp -a "$RUNNER_TEMP/dolci-fast/site/." dist/dolci-fast/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

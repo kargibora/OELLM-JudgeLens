@@ -24,6 +24,11 @@ translations for 400 more groups. Its [separate versioned ZIP](https://github.co
 is 36 MB; expect a similarly sized browser download. This is a feature-enriched sample,
 not a representative estimate of concept prevalence. Existing `/dolci/` links stay valid.
 
+The [fast expanded Dolci Viewer](https://kargibora.github.io/OELLM-JudgeLens/dolci-fast/)
+keeps the same examples and complete answers but loads verified answer text when needed.
+Exact text search waits for all required text. Its [versioned ZIP](https://github.com/kargibora/OELLM-JudgeLens/releases/tag/dolci-prompt256-response512-fast-v5)
+is separate; `/dolci/` and `/dolci-expanded/` are unchanged.
+
 ## What the interface provides
 
 - **Dataset contents** — common and rare prompt or answer concepts, with language/source
