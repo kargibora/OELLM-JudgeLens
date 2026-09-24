@@ -18,6 +18,12 @@ summaries and response concept types. Selected prompts and answers have short sh
 older full-state links still open. Labels were audited but not held-out-verified;
 this dataset has no preference outcomes.
 
+The optional [expanded Dolci Viewer](https://kargibora.github.io/OELLM-JudgeLens/dolci-expanded/)
+has 5,162 rows from 1,651 source groups. It retains all v3 examples and adds all nine
+translations for 400 more groups. Its [separate versioned ZIP](https://github.com/kargibora/OELLM-JudgeLens/releases/tag/dolci-prompt256-response512-expanded-v4)
+is 36 MB; expect a similarly sized browser download. This is a feature-enriched sample,
+not a representative estimate of concept prevalence. Existing `/dolci/` links stay valid.
+
 ## What the interface provides
 
 - **Dataset contents** — common and rare prompt or answer concepts, with language/source
