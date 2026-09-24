@@ -11,6 +11,11 @@ connects four questions:
 The repository works both as a standalone Vite application and as the
 `@prefscope/viewer` React package.
 
+The reviewed [Dolci prompt-256 / response-512 Viewer](https://kargibora.github.io/OELLM-JudgeLens/dolci-prompt256-response512-viewer/)
+is published separately from the main Viewer. Its [versioned export](https://github.com/kargibora/OELLM-JudgeLens/releases/tag/dolci-prompt256-response512-reviewed-v1)
+includes 250 named prompt features, 466 named response features, and response concept types.
+Labels were audited but not held-out-verified; this dataset has no preference outcomes.
+
 ## What the interface provides
 
 - **Dataset contents** — common and rare prompt or answer concepts, with language/source
